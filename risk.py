@@ -83,9 +83,18 @@ class RiskManager:
 
     def record_trade(self, pnl_change: float = 0.0) -> None:
         self._roll_day_if_needed()
+        # Increment trade count for any trade (entry or exit)
         self.state["trades_today"] = int(self.state.get("trades_today", 0)) + 1
+        # Accumulate PnL
         self.state["daily_pnl"] = float(self.state.get("daily_pnl", 0.0)) + float(pnl_change)
         self._save_state()
+
+    def get_daily_summary(self) -> dict:
+        self._roll_day_if_needed()
+        return {
+            "daily_pnl": float(self.state.get("daily_pnl", 0.0)),
+            "trades_count": int(self.state.get("trades_today", 0))
+        }
 
     def can_trade(self, is_exit: bool = False, current_hhmm: int | None = None) -> bool:
         """

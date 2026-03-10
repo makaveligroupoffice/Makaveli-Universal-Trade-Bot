@@ -353,7 +353,9 @@ class AutoTrader:
                         "high_since_entry": filled_avg_price,
                         "side": side_info
                     }
-                    log.info(f"{side_info.upper()} filled | symbol={symbol} entry={filled_avg_price}")
+                    msg = f"{side_info.upper()} filled | {symbol} | Price: ${filled_avg_price:.2f} | Qty: {filled_qty}"
+                    log.info(msg)
+                    send_notification(msg, title=f"Trade {side_info.upper()} Filled")
                     self.trade_journal.record(
                         f"{side_info}_filled",
                         {
@@ -373,7 +375,9 @@ class AutoTrader:
                     else: # cover
                         pnl = (entry_price - filled_avg_price) * float(filled_qty or 0)
 
-                    log.info(f"{side_info.upper()} filled | symbol={symbol} pnl={pnl:.4f}")
+                    msg = f"{side_info.upper()} filled | {symbol} | Price: ${filled_avg_price:.2f} | Qty: {filled_qty} | PnL: ${pnl:.2f}"
+                    log.info(msg)
+                    send_notification(msg, title=f"Trade {side_info.upper()} Filled")
                     self.trade_journal.record(
                         f"{side_info}_filled",
                         {
@@ -656,9 +660,12 @@ class AutoTrader:
                 self._reset_failures()
 
                 if self._should_shutdown_for_day():
-                    msg = "Trading day complete; bot is flat and market is closed. Shutting down."
+                    summary = self.risk.get_daily_summary()
+                    pnl = summary.get("daily_pnl", 0.0)
+                    trades = summary.get("trades_count", 0)
+                    msg = f"Trading day complete. Final Daily PnL: ${pnl:.2f} | Trades: {trades}. Shutting down."
                     log.info(msg)
-                    send_notification(msg)
+                    send_notification(msg, title="Bot Shutdown")
                     break
 
             except Exception as e:
