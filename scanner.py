@@ -12,14 +12,22 @@ class Scanner:
         self.max_price = 30.00
         self.min_total_volume = 100_000
 
-    def get_ranked_candidates(self) -> list[tuple[str, float]]:
+    def get_ranked_candidates(self, dynamic_config: dict | None = None) -> list[tuple[str, float]]:
         scored: list[tuple[str, float]] = []
 
+        # Evolution: Prioritize symbols that have performed well historically
+        symbol_performance = dynamic_config.get("symbol_performance", {}) if dynamic_config else {}
+        
         for symbol in self.universe:
             momentum = self._get_symbol_momentum(symbol)
             if momentum is None:
                 continue
-            scored.append((symbol, momentum))
+            
+            # Boost score for symbols with positive historical PnL
+            perf = symbol_performance.get(symbol, {"pnl": 0})
+            pnl_boost = 0.01 if perf["pnl"] > 0 else 0
+            
+            scored.append((symbol, momentum + pnl_boost))
 
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:10]
@@ -47,14 +55,14 @@ class Scanner:
         except (ValueError, TypeError, AttributeError):
             return None
 
-    def get_candidates(self) -> list[str]:
-        return [symbol for symbol, _score in self.get_ranked_candidates()]
+    def get_candidates(self, dynamic_config: dict | None = None) -> list[str]:
+        return [symbol for symbol, _score in self.get_ranked_candidates(dynamic_config)]
 
-    def get_recommendation_report(self) -> str:
+    def get_recommendation_report(self, dynamic_config: dict | None = None) -> str:
         """
         Generates a human-readable list of top momentum stocks found in the universe.
         """
-        candidates = self.get_ranked_candidates()
+        candidates = self.get_ranked_candidates(dynamic_config)
         if not candidates:
             return "No momentum stocks found matching criteria (Price $1-$30, Min Vol 100k)."
 

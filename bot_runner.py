@@ -14,6 +14,7 @@ from risk import RiskManager
 from scanner import Scanner
 from strategy import Strategy
 from performance import PerformanceAnalyzer
+from learning import LearningEngine
 from trade_journal import TradeJournal
 from notifications import send_notification
 
@@ -43,6 +44,7 @@ class AutoTrader:
         self.state_store = BotStateStore(Config.BOT_STATE_FILE)
         self.trade_journal = TradeJournal(Config.TRADE_JOURNAL_FILE)
         self.analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
+        self.learning = LearningEngine(Config.TRADE_JOURNAL_FILE)
         self.state = self.state_store.load()
         self.consecutive_failures = 0
         self.safe_mode = False
@@ -100,9 +102,10 @@ class AutoTrader:
         return self.state.get("dynamic_config", {})
 
     def _save_state(self):
-        # Periodically analyze and adjust dynamic config
+        # Periodically evolve and adjust dynamic config
         if int(time.time()) % 3600 < 60: # once an hour roughly
-             self.state["dynamic_config"] = self.analyzer.get_suggested_config(self.dynamic_config)
+             self.learning.evolve()
+             self.state["dynamic_config"] = self.learning.get_dynamic_config()
         self.state_store.save(self.state)
 
     def _clear_pending_order(self, order_id: str):
@@ -461,7 +464,7 @@ class AutoTrader:
             log.info(f"Max open positions reached ({open_positions_count})")
             return
 
-        ranked_candidates = self.scanner.get_ranked_candidates()
+        ranked_candidates = self.scanner.get_ranked_candidates(self.dynamic_config)
         log.info(
             "Scanner ranked candidates: "
             + ", ".join(f"{symbol}={momentum:.4%}" for symbol, momentum in ranked_candidates)
@@ -485,8 +488,8 @@ class AutoTrader:
                 continue
 
             bars = self.data.get_recent_bars(symbol, minutes=30)
-            should_buy, buy_reason = self.strategy.should_buy(bars)
-            should_short, short_reason = self.strategy.should_short(bars)
+            should_buy, buy_reason = self.strategy.should_buy(bars, self.dynamic_config)
+            should_short, short_reason = self.strategy.should_short(bars, self.dynamic_config)
             
             action = None
             reason = None

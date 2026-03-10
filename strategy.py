@@ -7,7 +7,7 @@ from config import Config
 
 class Strategy:
     @staticmethod
-    def should_buy(bars) -> tuple[bool, str]:
+    def should_buy(bars, dynamic_config: dict | None = None) -> tuple[bool, str]:
         if len(bars) < 20:
             return False, "not enough bars"
 
@@ -37,7 +37,10 @@ class Strategy:
         # Relative Volume (RVOL) Check: Volume must be significantly higher than average
         avg_volume = df['volume'].rolling(20).mean().iloc[-1]
         rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
-        volume_spike = rvol > 1.8 # Increased threshold for better quality signals
+        
+        # Evolution: Use learned min_rvol if available
+        min_rvol = dynamic_config.get("min_rvol", 1.8) if dynamic_config else 1.8
+        volume_spike = rvol > min_rvol # Increased threshold for better quality signals
         
         # Don't enter if volatility is extreme (relative to average price)
         volatility_excessive = last_atr > (last_close * 0.02) # > 2% of price per bar is high volatility
@@ -49,7 +52,7 @@ class Strategy:
             return False, "price below SMA20 or SMA10 < SMA20"
         
         if not volume_spike:
-            return False, f"low relative volume (RVOL: {rvol:.2f} < 1.8)"
+            return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})"
             
         if volatility_excessive:
              return False, "volatility too high (ATR > 2%)"
@@ -57,7 +60,7 @@ class Strategy:
         return True, f"trend + high RVOL ({rvol:.2f}) breakout"
 
     @staticmethod
-    def should_short(bars) -> tuple[bool, str]:
+    def should_short(bars, dynamic_config: dict | None = None) -> tuple[bool, str]:
         if len(bars) < 20:
             return False, "not enough bars"
 
@@ -83,7 +86,9 @@ class Strategy:
         
         avg_volume = df['volume'].rolling(20).mean().iloc[-1]
         rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
-        volume_spike = rvol > 1.8
+        
+        min_rvol = dynamic_config.get("min_rvol", 1.8) if dynamic_config else 1.8
+        volume_spike = rvol > min_rvol
         
         volatility_excessive = last_atr > (last_close * 0.02)
 
@@ -94,7 +99,7 @@ class Strategy:
             return False, "price above SMA20 or SMA10 > SMA20"
         
         if not volume_spike:
-            return False, f"low relative volume (RVOL: {rvol:.2f} < 1.8)"
+            return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})"
             
         if volatility_excessive:
             return False, "volatility too high (ATR > 2%)"
