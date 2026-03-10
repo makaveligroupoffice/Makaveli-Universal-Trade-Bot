@@ -49,8 +49,11 @@ def webhook():
     symbol = (data.get("symbol") or "").upper()
     qty = int(data.get("qty") or 0)
     alert_id = data.get("alert_id") or data.get("id") or ""
+    extended_hours = data.get("extended_hours", Config.ENABLE_EXTENDED_HOURS)
+    if isinstance(extended_hours, str):
+        extended_hours = extended_hours.lower() == "true"
 
-    log.info(f"→ Parsed trade | action={action} | symbol={symbol} | qty={qty} | alert_id={alert_id}")
+    log.info(f"→ Parsed trade | action={action} | symbol={symbol} | qty={qty} | alert_id={alert_id} | ext_hours={extended_hours}")
 
     if action == "status":
         try:
@@ -125,20 +128,23 @@ def webhook():
         return jsonify({"ok": False, "error": "spread too wide"}), 403
 
     limit_price = None
-    if Config.USE_LIMIT_ORDERS:
+    if Config.USE_LIMIT_ORDERS or extended_hours:
         latest_price = broker.get_latest_mid_price(symbol)
         if latest_price:
             if action == "buy":
                 limit_price = latest_price * (1 + (Config.LIMIT_OFFSET_PCT / 100.0))
             else:
                 limit_price = latest_price * (1 - (Config.LIMIT_OFFSET_PCT / 100.0))
+        elif extended_hours:
+            log.error(f"Cannot execute extended hours trade for {symbol}: No limit price available")
+            return jsonify({"ok": False, "error": "limit price required for extended hours"}), 400
 
     try:
         if action == "buy":
-            order = broker.buy(symbol, qty, limit_price=limit_price)
+            order = broker.buy(symbol, qty, limit_price=limit_price, extended_hours=extended_hours)
         else: # action == "sell"
             # If we are closing a position, use sell_all to handle long/short
-            order = broker.sell_all(symbol, limit_price=limit_price)
+            order = broker.sell_all(symbol, limit_price=limit_price, extended_hours=extended_hours)
             qty = current_qty
         
         msg = f"Webhook trade executed: {action.upper()} {qty} {symbol}"

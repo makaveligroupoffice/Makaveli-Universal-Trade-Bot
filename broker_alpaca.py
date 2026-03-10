@@ -16,14 +16,15 @@ class AlpacaBroker:
             paper=Config.ALPACA_PAPER,
         )
 
-    def buy(self, symbol: str, qty: int, limit_price: float | None = None):
-        if limit_price and Config.USE_LIMIT_ORDERS:
+    def buy(self, symbol: str, qty: int, limit_price: float | None = None, extended_hours: bool = False):
+        if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.BUY,
                 time_in_force=TimeInForce.DAY,
-                limit_price=round(limit_price, 2)
+                limit_price=round(limit_price, 2),
+                extended_hours=extended_hours
             )
         else:
             order = MarketOrderRequest(
@@ -34,14 +35,15 @@ class AlpacaBroker:
             )
         return self.client.submit_order(order_data=order)
 
-    def sell(self, symbol: str, qty: int, limit_price: float | None = None):
-        if limit_price and Config.USE_LIMIT_ORDERS:
+    def sell(self, symbol: str, qty: int, limit_price: float | None = None, extended_hours: bool = False):
+        if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.SELL,
                 time_in_force=TimeInForce.DAY,
-                limit_price=round(limit_price, 2)
+                limit_price=round(limit_price, 2),
+                extended_hours=extended_hours
             )
         else:
             order = MarketOrderRequest(
@@ -52,14 +54,15 @@ class AlpacaBroker:
             )
         return self.client.submit_order(order_data=order)
 
-    def short(self, symbol: str, qty: int, limit_price: float | None = None):
-        if limit_price and Config.USE_LIMIT_ORDERS:
+    def short(self, symbol: str, qty: int, limit_price: float | None = None, extended_hours: bool = False):
+        if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.SELL,
                 time_in_force=TimeInForce.DAY,
-                limit_price=round(limit_price, 2)
+                limit_price=round(limit_price, 2),
+                extended_hours=extended_hours
             )
         else:
             order = MarketOrderRequest(
@@ -70,14 +73,15 @@ class AlpacaBroker:
             )
         return self.client.submit_order(order_data=order)
 
-    def cover(self, symbol: str, qty: int, limit_price: float | None = None):
-        if limit_price and Config.USE_LIMIT_ORDERS:
+    def cover(self, symbol: str, qty: int, limit_price: float | None = None, extended_hours: bool = False):
+        if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.BUY,
                 time_in_force=TimeInForce.DAY,
-                limit_price=round(limit_price, 2)
+                limit_price=round(limit_price, 2),
+                extended_hours=extended_hours
             )
         else:
             order = MarketOrderRequest(
@@ -107,16 +111,16 @@ class AlpacaBroker:
         except APIError:
             return []
 
-    def sell_all(self, symbol: str, limit_price: float | None = None):
+    def sell_all(self, symbol: str, limit_price: float | None = None, extended_hours: bool = False):
         pos = self.get_position(symbol)
         if not pos:
             raise ValueError(f"No position to close for {symbol}")
         qty = abs(int(float(pos.qty)))
         side = pos.side
         if side == PositionSide.LONG:
-            return self.sell(symbol, qty, limit_price=limit_price)
+            return self.sell(symbol, qty, limit_price=limit_price, extended_hours=extended_hours)
         else:
-            return self.cover(symbol, qty, limit_price=limit_price)
+            return self.cover(symbol, qty, limit_price=limit_price, extended_hours=extended_hours)
 
     def get_open_positions_count(self) -> int:
         return len(self.get_all_positions())
