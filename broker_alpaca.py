@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce, PositionSide
 from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, LimitOrderRequest
 
 from config import Config
@@ -113,7 +113,7 @@ class AlpacaBroker:
             raise ValueError(f"No position to close for {symbol}")
         qty = abs(int(float(pos.qty)))
         side = pos.side
-        if side == OrderSide.LONG:
+        if side == PositionSide.LONG:
             return self.sell(symbol, qty, limit_price=limit_price)
         else:
             return self.cover(symbol, qty, limit_price=limit_price)
