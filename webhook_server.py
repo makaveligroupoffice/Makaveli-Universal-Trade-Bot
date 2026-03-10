@@ -119,6 +119,11 @@ def webhook():
             {"ok": False, "error": f"max open positions reached ({open_positions})"},
         ), 403
 
+    # Success rate optimization: Block entry if bid-ask spread is too wide
+    if action == "buy" and not risk.check_spread(symbol):
+        log.warning(f"Trade blocked: spread too wide for {symbol}")
+        return jsonify({"ok": False, "error": "spread too wide"}), 403
+
     limit_price = None
     if Config.USE_LIMIT_ORDERS:
         latest_price = broker.get_latest_mid_price(symbol)

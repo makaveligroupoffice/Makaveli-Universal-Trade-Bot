@@ -48,7 +48,7 @@ class Config:
     ENABLE_NEW_ENTRIES: bool = os.getenv("ENABLE_NEW_ENTRIES", "true").lower() == "true"
     USE_LIMIT_ORDERS: bool = os.getenv("USE_LIMIT_ORDERS", "false").lower() == "true"
     LIMIT_OFFSET_PCT: float = float(os.getenv("LIMIT_OFFSET_PCT", "0.05"))
-    MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.50"))
+    MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.20")) # Tightened from 0.50
     ORDER_TIMEOUT_SECONDS: int = int(os.getenv("ORDER_TIMEOUT_SECONDS", "180"))
     MAX_CONSECUTIVE_FAILURES: int = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "5"))
     AUTO_SHUTDOWN_AFTER_CLOSE: bool = os.getenv("AUTO_SHUTDOWN_AFTER_CLOSE", "true").lower() == "true"
@@ -60,8 +60,8 @@ class Config:
     )
 
     STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "1.0"))
-    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "2.0"))
-    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.0")) # 0.0 to disable
+    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "2.5")) # Increased from 2.0
+    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "1.0")) # Enabled by default
 
     # Flask
     HOST: str = os.getenv("HOST", "0.0.0.0")

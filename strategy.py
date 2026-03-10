@@ -17,6 +17,7 @@ class Strategy:
         # Simple manual indicators since pandas-ta is unavailable
         df['sma20'] = df['close'].rolling(window=20).mean()
         df['sma10'] = df['close'].rolling(window=10).mean()
+        df['sma200'] = df['close'].rolling(window=min(200, len(df))).mean() # Long-term trend
         
         # ATR-like volatility indicator
         df['tr'] = df.apply(lambda r: max(r['high'] - r['low'], abs(r['high'] - r['close']), abs(r['low'] - r['close'])), axis=1)
@@ -25,25 +26,35 @@ class Strategy:
         last_close = df['close'].iloc[-1]
         last_sma20 = df['sma20'].iloc[-1]
         last_sma10 = df['sma10'].iloc[-1]
+        last_sma200 = df['sma200'].iloc[-1]
         last_atr = df['atr14'].iloc[-1]
         
         # Momentum + Trend following
+        # 75% Win Rate Tip: Only trade in alignment with the long-term trend (SMA200)
+        long_term_bullish = last_close > last_sma200
         bullish_trend = last_close > last_sma20 and last_sma10 > last_sma20
-        volume_spike = df['volume'].iloc[-1] > df['volume'].rolling(20).mean().iloc[-1] * 1.5
+        
+        # Relative Volume (RVOL) Check: Volume must be significantly higher than average
+        avg_volume = df['volume'].rolling(20).mean().iloc[-1]
+        rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
+        volume_spike = rvol > 1.8 # Increased threshold for better quality signals
         
         # Don't enter if volatility is extreme (relative to average price)
         volatility_excessive = last_atr > (last_close * 0.02) # > 2% of price per bar is high volatility
+
+        if not long_term_bullish:
+            return False, "price below SMA200 (avoiding counter-trend)"
 
         if not bullish_trend:
             return False, "price below SMA20 or SMA10 < SMA20"
         
         if not volume_spike:
-            return False, "no volume spike"
+            return False, f"low relative volume (RVOL: {rvol:.2f} < 1.8)"
             
         if volatility_excessive:
              return False, "volatility too high (ATR > 2%)"
 
-        return True, "trend + volume breakout"
+        return True, f"trend + high RVOL ({rvol:.2f}) breakout"
 
     @staticmethod
     def should_short(bars) -> tuple[bool, str]:
@@ -55,6 +66,7 @@ class Strategy:
         
         df['sma20'] = df['close'].rolling(window=20).mean()
         df['sma10'] = df['close'].rolling(window=10).mean()
+        df['sma200'] = df['close'].rolling(window=min(200, len(df))).mean()
         
         # ATR-like volatility indicator
         df['tr'] = df.apply(lambda r: max(r['high'] - r['low'], abs(r['high'] - r['close']), abs(r['low'] - r['close'])), axis=1)
@@ -63,22 +75,31 @@ class Strategy:
         last_close = df['close'].iloc[-1]
         last_sma20 = df['sma20'].iloc[-1]
         last_sma10 = df['sma10'].iloc[-1]
+        last_sma200 = df['sma200'].iloc[-1]
         last_atr = df['atr14'].iloc[-1]
         
+        long_term_bearish = last_close < last_sma200
         bearish_trend = last_close < last_sma20 and last_sma10 < last_sma20
-        volume_spike = df['volume'].iloc[-1] > df['volume'].rolling(20).mean().iloc[-1] * 1.5
+        
+        avg_volume = df['volume'].rolling(20).mean().iloc[-1]
+        rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
+        volume_spike = rvol > 1.8
+        
         volatility_excessive = last_atr > (last_close * 0.02)
+
+        if not long_term_bearish:
+            return False, "price above SMA200 (avoiding counter-trend short)"
 
         if not bearish_trend:
             return False, "price above SMA20 or SMA10 > SMA20"
         
         if not volume_spike:
-            return False, "no volume spike"
+            return False, f"low relative volume (RVOL: {rvol:.2f} < 1.8)"
             
         if volatility_excessive:
             return False, "volatility too high (ATR > 2%)"
 
-        return True, "bearish trend + volume breakout"
+        return True, f"bearish trend + high RVOL ({rvol:.2f}) breakout"
 
     @staticmethod
     def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None) -> tuple[bool, str]:

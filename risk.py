@@ -81,6 +81,23 @@ class RiskManager:
         self.state["seen_alert_ids"] = list(seen)
         self._save_state()
 
+    def check_spread(self, symbol: str) -> bool:
+        """
+        Verifies if the bid-ask spread is within acceptable limits.
+        This prevents bad fills in low-liquidity stocks.
+        """
+        from market_data import MarketDataClient
+        md = MarketDataClient()
+        spread_pct = md.get_spread_pct(symbol)
+        
+        if spread_pct is None:
+            return True # Assume OK if we can't get quote (might be data feed lag)
+            
+        if spread_pct > Config.MAX_SPREAD_PCT:
+            return False
+            
+        return True
+
     def record_trade(self, pnl_change: float = 0.0) -> None:
         self._roll_day_if_needed()
         # Increment trade count for any trade (entry or exit)
