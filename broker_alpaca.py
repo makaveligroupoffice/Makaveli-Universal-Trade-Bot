@@ -128,6 +128,12 @@ class AlpacaBroker:
     def get_account(self):
         return self.client.get_account()
 
+    def get_open_positions(self):
+        try:
+            return self.client.get_all_positions()
+        except APIError:
+            return []
+
     def get_orders(self, status: str = "all", limit: int = 20):
         try:
             status_enum = QueryOrderStatus(status)

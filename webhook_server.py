@@ -52,6 +52,36 @@ def webhook():
 
     log.info(f"→ Parsed trade | action={action} | symbol={symbol} | qty={qty} | alert_id={alert_id}")
 
+    if action == "status":
+        try:
+            acct = broker.get_account()
+            positions = broker.get_open_positions()
+            summary = risk.get_daily_summary()
+            
+            equity = f"${float(acct.equity):,.2f}" if acct else "N/A"
+            pnl = f"${summary['daily_pnl']:,.2f}"
+            trades = summary["trades_count"]
+            
+            pos_list = []
+            for p in positions:
+                side = "LONG" if float(p.qty) > 0 else "SHORT"
+                pos_list.append(f"{p.symbol} ({side}): {abs(float(p.qty))} @ ${float(p.avg_entry_price):.2f}")
+            
+            pos_str = "\n".join(pos_list) if pos_list else "None"
+            
+            msg = (
+                f"📊 Bot Status Report\n"
+                f"Equity: {equity}\n"
+                f"Daily PnL: {pnl}\n"
+                f"Trades Today: {trades}\n"
+                f"Open Positions:\n{pos_str}"
+            )
+            send_notification(msg, title="Bot Status")
+            return jsonify({"ok": True, "message": "Status sent to phone"}), 200
+        except Exception as e:
+            log.exception(f"Failed to get status: {e}")
+            return jsonify({"ok": False, "error": str(e)}), 500
+
     if action not in {"buy", "sell"}:
         return jsonify({"ok": False, "error": "action must be buy/sell"}), 400
 
