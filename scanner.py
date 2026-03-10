@@ -49,3 +49,24 @@ class Scanner:
 
     def get_candidates(self) -> list[str]:
         return [symbol for symbol, _score in self.get_ranked_candidates()]
+
+    def get_recommendation_report(self) -> str:
+        """
+        Generates a human-readable list of top momentum stocks found in the universe.
+        """
+        candidates = self.get_ranked_candidates()
+        if not candidates:
+            return "No momentum stocks found matching criteria (Price $1-$30, Min Vol 100k)."
+
+        lines = ["🚀 Top Momentum Picks:"]
+        for symbol, score in candidates:
+            pct = score * 100
+            try:
+                # Get current price for the report
+                price = self.data.get_latest_mid_price(symbol)
+                price_str = f"${price:.2f}" if price else "N/A"
+                lines.append(f"• {symbol}: {price_str} (+{pct:.2f}% in 20m)")
+            except:
+                lines.append(f"• {symbol}: +{pct:.2f}% (20m)")
+
+        return "\n".join(lines)

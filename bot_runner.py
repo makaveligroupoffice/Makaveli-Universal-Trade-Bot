@@ -645,6 +645,13 @@ class AutoTrader:
         )
         self._log_startup_reconciliation()
 
+        # Send a morning watchlist report on startup
+        try:
+            watchlist = self.scanner.get_recommendation_report()
+            send_notification(watchlist, title="Morning Watchlist")
+        except Exception as e:
+            log.warning(f"Failed to generate morning watchlist: {e}")
+
         while True:
             try:
                 self.sync_state()

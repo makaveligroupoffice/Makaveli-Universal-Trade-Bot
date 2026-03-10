@@ -7,6 +7,7 @@ from config import Config
 from broker_alpaca import AlpacaBroker
 from risk import RiskManager
 from notifications import send_notification
+from scanner import Scanner
 
 os.makedirs(Config.LOG_DIR, exist_ok=True)
 
@@ -24,6 +25,7 @@ app = Flask(__name__)
 
 broker = AlpacaBroker()
 risk = RiskManager()
+scanner = Scanner()
 
 
 def _auth_ok(req) -> bool:
@@ -85,8 +87,17 @@ def webhook():
             log.exception(f"Failed to get status: {e}")
             return jsonify({"ok": False, "error": str(e)}), 500
 
+    if action == "scan":
+        try:
+            report = scanner.get_recommendation_report()
+            send_notification(report, title="Market Scan Report")
+            return jsonify({"ok": True, "message": "Scan report sent to phone"}), 200
+        except Exception as e:
+            log.exception(f"Failed to run scan: {e}")
+            return jsonify({"ok": False, "error": str(e)}), 500
+
     if action not in {"buy", "sell"}:
-        return jsonify({"ok": False, "error": "action must be buy/sell"}), 400
+        return jsonify({"ok": False, "error": "action must be buy/sell/status/scan"}), 400
 
     if not symbol:
         return jsonify({"ok": False, "error": "symbol required"}), 400
