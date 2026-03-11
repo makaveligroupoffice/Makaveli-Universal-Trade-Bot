@@ -161,7 +161,15 @@ class Strategy:
         # --- Momentum rollover (The "Scalp" exit) ---
         # Skip this aggressive exit if we are in a strong "Hold" trend
         if not is_strong_trend:
-            if len(bars) >= 3:
+            # Check for a minimum profit before scalping to avoid "pennies" exits
+            min_scalp_profit = 0.5 / 100.0 # Must be up at least 0.5%
+            is_profitable = False
+            if side == "buy":
+                is_profitable = (current_price > entry_price * (1 + min_scalp_profit))
+            else:
+                is_profitable = (current_price < entry_price * (1 - min_scalp_profit))
+
+            if is_profitable and len(bars) >= 3:
                 closes = [float(bar.close) for bar in bars[-3:]]
                 if side == "buy" and closes[-1] < closes[-2] < closes[-3]:
                     return True, "scalp exit: momentum rollover"
