@@ -676,6 +676,18 @@ class AutoTrader:
                     msg = f"Trading day complete. Final Daily PnL: ${pnl:.2f} | Trades: {trades}. Shutting down."
                     log.info(msg)
                     send_notification(msg, title="Bot Shutdown")
+
+                    # Run Nightly Research before final shutdown
+                    try:
+                        from learning import MarketResearcher
+                        researcher = MarketResearcher(self.dynamic_config)
+                        updates = researcher.perform_nightly_research()
+                        if updates:
+                            self.learning.state.update(updates)
+                            self.learning._save_model()
+                    except Exception as e:
+                        log.error(f"Nightly Research failed: {e}")
+
                     break
 
             except Exception as e:

@@ -17,6 +17,31 @@ class MarketDataClient:
             Config.ALPACA_SECRET,
         )
 
+    def get_bars_for_research(self, symbol: str, days: int = 3):
+        """Fetch historical bars for research purposes."""
+        end = datetime.now(UTC)
+        start = end - timedelta(days=days)
+
+        feed = DataFeed.SIP if Config.ALPACA_DATA_FEED.lower() == "sip" else DataFeed.IEX
+
+        # noinspection PyArgumentList
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame.Minute,
+            start=start,
+            end=end,
+            feed=feed,
+        )
+
+        try:
+            bars = self.client.get_stock_bars(request)
+            if symbol not in bars.data:
+                return []
+            return bars.data[symbol]
+        except Exception as e:
+            print(f"Error fetching research bars for {symbol}: {e}")
+            return []
+
     def get_recent_bars(self, symbol: str, minutes: int = 30):
         end = datetime.now(UTC)
         start = end - timedelta(minutes=minutes + 5)

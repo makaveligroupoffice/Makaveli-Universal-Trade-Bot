@@ -4,8 +4,82 @@ import os
 from datetime import datetime, timedelta
 from config import Config
 from notifications import send_notification
+from market_data import MarketDataClient
+from strategy import Strategy
+from universe import DEFAULT_UNIVERSE
 
 log = logging.getLogger("autobot")
+
+class MarketResearcher:
+    def __init__(self, dynamic_config: dict):
+        self.md = MarketDataClient()
+        self.dynamic_config = dynamic_config
+
+    def perform_nightly_research(self):
+        """Analyze recent market data for the entire universe and find optimal parameters."""
+        log.info("Starting nightly market research...")
+        
+        results = []
+        for symbol in DEFAULT_UNIVERSE:
+            bars = self.md.get_bars_for_research(symbol, days=2)
+            if len(bars) < 50:
+                continue
+            
+            # Simulate strategy on these bars
+            win_count = 0
+            loss_count = 0
+            pnl_total = 0
+            
+            # Very simple backtest simulation
+            for i in range(20, len(bars) - 20):
+                window = bars[i-20:i]
+                should_buy, _ = Strategy.should_buy(window, self.dynamic_config)
+                
+                if should_buy:
+                    entry_price = float(bars[i].open)
+                    # Look ahead for outcome
+                    max_future = 0
+                    min_future = 999999
+                    exit_price = entry_price
+                    
+                    for j in range(i+1, min(i+60, len(bars))):
+                        future_price = float(bars[j].close)
+                        max_future = max(max_future, float(bars[j].high))
+                        min_future = min(min_future, float(bars[j].low))
+                        
+                        # Check exit logic
+                        should_sell, _ = Strategy.should_sell(entry_price, future_price, bars[j-20:j], max_future, "buy", self.dynamic_config)
+                        if should_sell:
+                            exit_price = future_price
+                            break
+                    
+                    pnl = exit_price - entry_price
+                    pnl_total += pnl
+                    if pnl > 0: win_count += 1
+                    else: loss_count += 1
+
+            results.append({
+                "symbol": symbol,
+                "win_rate": win_count / (win_count + loss_count) if (win_count + loss_count) > 0 else 0,
+                "total_pnl": pnl_total
+            })
+
+        # Update dynamic config based on global performance
+        overall_win_rate = sum(r["win_rate"] for r in results) / len(results) if results else 0
+        
+        updates = {}
+        if overall_win_rate < 0.50:
+            updates["min_rvol"] = min(self.dynamic_config.get("min_rvol", 1.8) + 0.1, 2.5)
+            log.info(f"Nightly Research: Win rate {overall_win_rate:.2f} was low, increasing min_rvol to {updates['min_rvol']}")
+        elif overall_win_rate > 0.70:
+            updates["min_rvol"] = max(self.dynamic_config.get("min_rvol", 1.8) - 0.05, 1.2)
+            log.info(f"Nightly Research: Win rate {overall_win_rate:.2f} was high, slightly lowering min_rvol to {updates['min_rvol']}")
+
+        if updates:
+            send_notification(f"🌙 Nightly Research Complete: Analyzed {len(results)} stocks. Strategy evolved based on broader market patterns.")
+            return updates
+        
+        return {}
 
 class LearningEngine:
     def __init__(self, journal_path: str, model_path: str = "logs/learned_model.json"):
