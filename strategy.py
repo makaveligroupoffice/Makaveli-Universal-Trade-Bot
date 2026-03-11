@@ -114,7 +114,25 @@ class Strategy:
         # Use dynamic config if provided, else fallback to global config
         sl_pct = (dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if dynamic_config else Config.STOP_LOSS_PCT) / 100.0
         tp_pct = (dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
-        ts_pct = Config.TRAILING_STOP_PCT / 100.0 # Trailing stop still global for now
+        ts_pct = Config.TRAILING_STOP_PCT / 100.0 
+
+        # --- Dynamic Strategy Switch: Scalp vs. Hold ---
+        is_strong_trend = False
+        if len(bars) >= 20:
+            import pandas as pd
+            df = pd.DataFrame([{"close": float(b.close)} for b in bars[-20:]])
+            df['sma20'] = df['close'].rolling(window=20).mean()
+            last_close = df['close'].iloc[-1]
+            last_sma20 = df['sma20'].iloc[-1]
+            # Strong trend: Price is at least 1% above SMA20 (for longs) or below (for shorts)
+            if side == "buy":
+                is_strong_trend = last_close > (last_sma20 * 1.01)
+            else:
+                is_strong_trend = last_close < (last_sma20 * 0.99)
+
+        # If it's a strong trend, LOOSEN the trailing stop to allow for bigger moves
+        if is_strong_trend:
+             ts_pct = ts_pct * 2.0 # Allow 2x room for strong runners
 
         if side == "buy":
             # Stop loss
@@ -132,7 +150,6 @@ class Strategy:
             if current_price >= entry_price * (1 + sl_pct):
                 return True, f"short stop loss hit ({sl_pct*100:.2f}%)"
             # Trailing stop (low since entry)
-            # For short, high_since_entry actually tracks LOW since entry
             low_since_entry = high_since_entry
             if ts_pct > 0 and low_since_entry:
                 if current_price >= low_since_entry * (1 + ts_pct):
@@ -141,13 +158,15 @@ class Strategy:
             if tp_pct > 0 and current_price <= entry_price * (1 - tp_pct):
                 return True, f"short take profit hit ({tp_pct*100:.2f}%)"
 
-        # Momentum exit
-        if len(bars) >= 3:
-            closes = [float(bar.close) for bar in bars[-3:]]
-            if side == "buy" and closes[-1] < closes[-2] < closes[-3]:
-                return True, "momentum rollover"
-            if side == "short" and closes[-1] > closes[-2] > closes[-3]:
-                return True, "short momentum rollover"
+        # --- Momentum rollover (The "Scalp" exit) ---
+        # Skip this aggressive exit if we are in a strong "Hold" trend
+        if not is_strong_trend:
+            if len(bars) >= 3:
+                closes = [float(bar.close) for bar in bars[-3:]]
+                if side == "buy" and closes[-1] < closes[-2] < closes[-3]:
+                    return True, "scalp exit: momentum rollover"
+                if side == "short" and closes[-1] > closes[-2] > closes[-3]:
+                    return True, "scalp exit: short momentum rollover"
 
         now_hhmm = int(datetime.now().strftime("%H%M"))
         if now_hhmm >= int(Config.ALLOWED_END_HHMM):
