@@ -153,14 +153,16 @@ class AutoTrader:
             return 0.0
         return time.time() - float(start_ts)
 
-    def _calc_qty(self, price: float) -> int:
+    def _calc_qty(self, price: float, symbol: str) -> float:
         if price <= 0:
-            return 0
+            return 0.0
 
+        is_crypto = "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"])
+        
         sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT)) / 100.0
         risk_per_share = price * sl_pct
         if risk_per_share <= 0:
-            return 0
+            return 0.0
 
         risk_amount = Config.RISK_PER_TRADE_DOLLARS
         if Config.USE_PERCENTAGE_RISK:
@@ -168,7 +170,7 @@ class AutoTrader:
             equity = float(acct.equity)
             risk_amount = equity * (Config.RISK_PCT_PER_TRADE / 100.0)
 
-        qty = int(risk_amount / risk_per_share)
+        qty = risk_amount / risk_per_share
         
         # Determine dynamic max position value
         max_pos_value = Config.MAX_POSITION_VALUE_DOLLARS
@@ -178,11 +180,16 @@ class AutoTrader:
             # If compounding, allow position value up to 2x the normal cap or 25% of equity, whichever is higher
             max_pos_value = max(Config.MAX_POSITION_VALUE_DOLLARS, equity * 0.25)
 
-        max_by_position_value = int(max_pos_value / price)
+        max_by_position_value = max_pos_value / price
         qty = min(qty, max_by_position_value) if max_by_position_value > 0 else 0
-        return max(qty, 1) if qty > 0 else 0
+        
+        if not is_crypto:
+            qty = int(qty)
+            return float(qty) if qty > 0 else 0.0
 
-    def _account_allows_new_position(self, price: float, qty: int) -> tuple[bool, str]:
+        return qty
+
+    def _account_allows_new_position(self, price: float, qty: float) -> tuple[bool, str]:
         acct = self.broker.get_account()
         try:
             buying_power = float(acct.buying_power)
@@ -507,7 +514,7 @@ class AutoTrader:
             if not latest_price or latest_price <= 0:
                 continue
 
-            qty = self._calc_qty(latest_price)
+            qty = self._calc_qty(latest_price, symbol)
             if qty <= 0:
                 continue
 
