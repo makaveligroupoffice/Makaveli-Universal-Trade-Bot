@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce, PositionSide
-from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, LimitOrderRequest
+from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce, PositionSide, PositionIntent, OrderType, OrderClass
+from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, LimitOrderRequest, OrderRequest, OptionLegRequest
 
 from config import Config
 
@@ -90,6 +90,57 @@ class AlpacaBroker:
                 side=OrderSide.BUY,
                 time_in_force=TimeInForce.DAY,
             )
+        return self.client.submit_order(order_data=order)
+
+    def submit_option_order(
+        self,
+        symbol: str | None = None,
+        qty: float | None = None,
+        side: OrderSide | None = None,
+        position_intent: PositionIntent | None = None,
+        limit_price: float | None = None,
+        legs: list[dict] | None = None
+    ):
+        """
+        Submits an option order (single or multi-legged).
+        If legs are provided, 'symbol', 'qty', 'side' are ignored for the top-level request
+        (Alpaca multi-legged orders use the 'legs' list).
+        """
+        if legs:
+            # Multi-legged order
+            option_legs = []
+            for leg in legs:
+                option_legs.append(OptionLegRequest(
+                    symbol=leg["symbol"].upper(),
+                    ratio_qty=float(leg["ratio_qty"]),
+                    side=OrderSide(leg["side"].lower()),
+                    position_intent=PositionIntent(leg["position_intent"].lower())
+                ))
+            
+            # For multi-leg, symbol is usually the underlying? 
+            # Actually Alpaca Multi-leg API uses 'symbol' as the underlying symbol.
+            # And qty as the number of units of the strategy.
+            order = OrderRequest(
+                symbol=symbol.upper() if symbol else "",
+                qty=float(qty) if qty else 1.0,
+                side=side or OrderSide.BUY,
+                type=OrderType.LIMIT if limit_price else OrderType.MARKET,
+                time_in_force=TimeInForce.DAY,
+                legs=option_legs,
+                limit_price=round(limit_price, 2) if limit_price else None
+            )
+        else:
+            # Single leg option order
+            order = OrderRequest(
+                symbol=symbol.upper(),
+                qty=float(qty),
+                side=side,
+                type=OrderType.LIMIT if limit_price else OrderType.MARKET,
+                time_in_force=TimeInForce.DAY,
+                position_intent=position_intent,
+                limit_price=round(limit_price, 2) if limit_price else None
+            )
+        
         return self.client.submit_order(order_data=order)
 
     def get_position_qty(self, symbol: str) -> int:

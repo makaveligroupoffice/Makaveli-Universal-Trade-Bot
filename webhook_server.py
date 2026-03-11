@@ -4,7 +4,7 @@ import os
 from flask import Flask, request, jsonify
 
 from config import Config
-from broker_alpaca import AlpacaBroker
+from broker_alpaca import AlpacaBroker, PositionIntent, OrderSide
 from risk import RiskManager
 from notifications import send_notification
 from scanner import Scanner
@@ -49,13 +49,21 @@ def webhook():
 
     action = (data.get("action") or "").lower()
     symbol = (data.get("symbol") or "").upper()
-    qty = int(data.get("qty") or 0)
+    qty = float(data.get("qty") or 0)
     alert_id = data.get("alert_id") or data.get("id") or ""
     extended_hours = data.get("extended_hours", Config.ENABLE_EXTENDED_HOURS)
     if isinstance(extended_hours, str):
         extended_hours = extended_hours.lower() == "true"
 
-    log.info(f"→ Parsed trade | action={action} | symbol={symbol} | qty={qty} | alert_id={alert_id} | ext_hours={extended_hours}")
+    # Option specific fields
+    is_option = data.get("is_option", False)
+    option_symbol = (data.get("option_symbol") or "").upper()
+    side = data.get("side", "").lower() # buy/sell
+    intent = data.get("intent", "").lower() # buy_to_open, sell_to_close, etc.
+    legs = data.get("legs") # list of leg dicts
+    limit_price = data.get("limit_price")
+
+    log.info(f"→ Parsed trade | action={action} | symbol={symbol} | qty={qty} | is_option={is_option} | alert_id={alert_id}")
 
     if action == "status":
         try:
@@ -94,6 +102,29 @@ def webhook():
             return jsonify({"ok": True, "message": "Scan report sent to phone"}), 200
         except Exception as e:
             log.exception(f"Failed to run scan: {e}")
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    if action == "option":
+        try:
+            order_side = OrderSide.BUY if side == "buy" else OrderSide.SELL
+            pos_intent = None
+            if intent:
+                pos_intent = PositionIntent(intent)
+            
+            order = broker.submit_option_order(
+                symbol=option_symbol or symbol,
+                qty=qty,
+                side=order_side,
+                position_intent=pos_intent,
+                limit_price=limit_price,
+                legs=legs
+            )
+            msg = f"Option trade executed: {intent or side} {qty} {option_symbol or symbol}"
+            send_notification(msg, title="Option Trade")
+            risk.mark_alert_seen(alert_id)
+            return jsonify({"ok": True, "order_id": getattr(order, "id", None)}), 200
+        except Exception as e:
+            log.exception(f"❌ Option order failed: {e}")
             return jsonify({"ok": False, "error": str(e)}), 500
 
     if action not in {"buy", "sell"}:

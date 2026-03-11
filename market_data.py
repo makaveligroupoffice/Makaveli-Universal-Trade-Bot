@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from alpaca.data.enums import DataFeed
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
+from alpaca.data.historical import StockHistoricalDataClient, OptionHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest, OptionChainRequest, OptionLatestQuoteRequest, OptionSnapshotRequest
 from alpaca.data.timeframe import TimeFrame
 
 from config import Config
@@ -13,6 +13,10 @@ from config import Config
 class MarketDataClient:
     def __init__(self):
         self.client = StockHistoricalDataClient(
+            Config.ALPACA_KEY,
+            Config.ALPACA_SECRET,
+        )
+        self.option_client = OptionHistoricalDataClient(
             Config.ALPACA_KEY,
             Config.ALPACA_SECRET,
         )
@@ -108,3 +112,20 @@ class MarketDataClient:
             return None
 
         return ((ask - bid) / mid) * 100.0
+
+    def get_option_latest_quote(self, symbol: str):
+        """Fetch latest quote for an option symbol."""
+        request = OptionLatestQuoteRequest(symbol_or_symbols=symbol)
+        quotes = self.option_client.get_option_latest_quote(request)
+        return quotes.get(symbol)
+
+    def get_option_chain(self, underlying_symbol: str):
+        """Fetch option chain for an underlying symbol."""
+        request = OptionChainRequest(underlying_symbol=underlying_symbol)
+        return self.option_client.get_option_chain(request)
+
+    def get_option_snapshot(self, symbol: str):
+        """Fetch snapshot for an option symbol (includes Greeks)."""
+        request = OptionSnapshotRequest(symbol_or_symbols=symbol)
+        snapshots = self.option_client.get_option_snapshot(request)
+        return snapshots.get(symbol)

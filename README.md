@@ -4,7 +4,11 @@ A professional-grade, automated day trading bot for the Alpaca markets. Built wi
 
 ## Key Features
 
-- **Universal Strategy Execution**: Can handle both **Long** and **Short** trades (Short Selling support included).
+- **Universal Strategy Execution**: Can handle **Long/Short Stocks** and **Options** (Calls, Puts, Spreads, Multi-legged).
+- **Options Support**:
+    - **Single-Leg**: Long/Short Calls and Puts.
+    - **Multi-Legged**: Spreads (Bull Call, Bear Put, etc.), Straddles, Covered Calls, and Cash-Secured Puts.
+    - **Advanced Data**: Fetches Option Chains and Greeks (Delta, Gamma, etc.) for informed trading.
 - **Multi-Stock Support**: Capable of managing up to 5 concurrent positions at once.
 - **Real-Time Notifications**: Receive alerts on your phone (via **Pushover** or **Discord**) for:
     - Bot Startup/Shutdown (synced with market hours).
@@ -91,6 +95,33 @@ ngrok http 5000
 Once your ngrok tunnel is up, you can send a trade signal using the provided tool:
 ```bash
 python3 remote_trade.py buy SOFI 10 --url https://your-ngrok-url.ngrok-free.dev/webhook
+```
+
+### Options Webhook Format (JSON)
+You can send complex option signals via the `/webhook` endpoint:
+```json
+{
+  "action": "option",
+  "symbol": "AAPL",
+  "option_symbol": "AAPL260618C00200000",
+  "side": "buy",
+  "intent": "buy_to_open",
+  "qty": 1,
+  "secret": "your_bot_secret"
+}
+```
+For multi-legged spreads:
+```json
+{
+  "action": "option",
+  "symbol": "AAPL",
+  "legs": [
+    {"symbol": "AAPL260618C00200000", "ratio_qty": 1, "side": "buy", "position_intent": "buy_to_open"},
+    {"symbol": "AAPL260618C00210000", "ratio_qty": 1, "side": "sell", "position_intent": "sell_to_open"}
+  ],
+  "qty": 1,
+  "secret": "your_bot_secret"
+}
 ```
 
 ## Security Note

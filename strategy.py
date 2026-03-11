@@ -154,3 +154,14 @@ class Strategy:
             return True, "end of trading window"
 
         return False, "hold"
+
+    @staticmethod
+    def get_option_strategy_legs(underlying_symbol: str, strategy_name: str, chain, current_price: float) -> list[dict] | None:
+        """
+        Calculates legs for various option strategies based on the current option chain.
+        Supported: covered_call, cash_secured_put, long_call, long_put, bull_call_spread, bear_put_spread, straddle
+        """
+        # This is a placeholder for complex strategy logic
+        # In a real scenario, you'd pick the best expiration and strike
+        # For now, we return None as a signal that manual strike selection is preferred via webhook
+        return None
