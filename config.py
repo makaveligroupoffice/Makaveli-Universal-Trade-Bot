@@ -44,6 +44,13 @@ class Config:
     # Market Data
     ALPACA_DATA_FEED: str = os.getenv("ALPACA_DATA_FEED", "iex")  # 'iex' or 'sip'
 
+    # TradingView Screener
+    USE_TV_SCREENER: bool = os.getenv("USE_TV_SCREENER", "true").lower() == "true"
+    TV_SCREENER_PRICE_MIN: float = float(os.getenv("TV_SCREENER_PRICE_MIN", "1.0"))
+    TV_SCREENER_PRICE_MAX: float = float(os.getenv("TV_SCREENER_PRICE_MAX", "30.0"))
+    TV_SCREENER_VOLUME_MIN: float = float(os.getenv("TV_SCREENER_VOLUME_MIN", "100000"))
+    TV_SCREENER_LIMIT: int = int(os.getenv("TV_SCREENER_LIMIT", "20"))
+
     # Strategy controls
     ENABLE_EXTENDED_HOURS: bool = os.getenv("ENABLE_EXTENDED_HOURS", "false").lower() == "true"
     ENABLE_NEW_ENTRIES: bool = os.getenv("ENABLE_NEW_ENTRIES", "true").lower() == "true"

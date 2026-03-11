@@ -1,7 +1,12 @@
 from __future__ import annotations
+import logging
+from tradingview_screener import Query, Column
 
+from config import Config
 from market_data import MarketDataClient
 from universe import DEFAULT_UNIVERSE
+
+log = logging.getLogger("tradebot")
 
 
 class Scanner:
@@ -18,7 +23,13 @@ class Scanner:
         # Evolution: Prioritize symbols that have performed well historically
         symbol_performance = dynamic_config.get("symbol_performance", {}) if dynamic_config else {}
         
-        for symbol in self.universe:
+        # Decide the universe to scan
+        if Config.USE_TV_SCREENER:
+            universe = self.get_tv_candidates()
+        else:
+            universe = self.universe
+        
+        for symbol in universe:
             momentum = self._get_symbol_momentum(symbol)
             if momentum is None:
                 continue
@@ -31,6 +42,33 @@ class Scanner:
 
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:10]
+
+    def get_tv_candidates(self) -> list[str]:
+        """
+        Fetch high-momentum candidates from TradingView Screener.
+        """
+        try:
+            q = (Query()
+                 .set_markets('america')
+                 .where(
+                     Column('type') == 'stock',
+                     Column('subtype') == 'common',
+                     Column('close').between(Config.TV_SCREENER_PRICE_MIN, Config.TV_SCREENER_PRICE_MAX),
+                     Column('volume') >= Config.TV_SCREENER_VOLUME_MIN
+                 )
+                 .order_by('change', ascending=False)
+                 .limit(Config.TV_SCREENER_LIMIT)
+                 .select('name'))
+            
+            count, df = q.get_scanner_data()
+            if count > 0 and not df.empty:
+                tickers = df['name'].tolist()
+                log.info(f"TV Screener found {len(tickers)} candidates.")
+                return tickers
+        except Exception as e:
+            log.error(f"Failed to fetch TV Screener data: {e}")
+        
+        return self.universe # Fallback to default universe
 
     def _get_symbol_momentum(self, symbol: str) -> float | None:
         try:
