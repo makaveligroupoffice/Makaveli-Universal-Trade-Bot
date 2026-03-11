@@ -32,7 +32,13 @@ class Strategy:
         # Momentum + Trend following
         # 75% Win Rate Tip: Only trade in alignment with the long-term trend (SMA200)
         long_term_bullish = last_close > last_sma200
-        bullish_trend = last_close > last_sma20 and last_sma10 > last_sma20
+        # Medium-term trend: Price above SMA20 and SMA10 above SMA20
+        # Short-term trend: Price above SMA10
+        bullish_trend = last_close > last_sma20 and last_sma10 > last_sma20 and last_close > last_sma10
+        
+        # Candle confirmation: Last candle must be green and close near high
+        last_candle_green = last_close > df['close'].iloc[-2]
+        close_near_high = (last_close - df['low'].iloc[-1]) > (df['high'].iloc[-1] - df['low'].iloc[-1]) * 0.7
         
         # Relative Volume (RVOL) Check: Volume must be significantly higher than average
         avg_volume = df['volume'].rolling(20).mean().iloc[-1]
@@ -49,7 +55,10 @@ class Strategy:
             return False, "price below SMA200 (avoiding counter-trend)"
 
         if not bullish_trend:
-            return False, "price below SMA20 or SMA10 < SMA20"
+            return False, "trend not strong enough (need Close > SMA10 > SMA20)"
+        
+        if not (last_candle_green and close_near_high):
+            return False, "lack of price confirmation (need green candle close near high)"
         
         if not volume_spike:
             return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})"
@@ -82,7 +91,13 @@ class Strategy:
         last_atr = df['atr14'].iloc[-1]
         
         long_term_bearish = last_close < last_sma200
-        bearish_trend = last_close < last_sma20 and last_sma10 < last_sma20
+        # Medium-term trend: Price below SMA20 and SMA10 below SMA20
+        # Short-term trend: Price below SMA10
+        bearish_trend = last_close < last_sma20 and last_sma10 < last_sma20 and last_close < last_sma10
+        
+        # Candle confirmation: Last candle must be red and close near low
+        last_candle_red = last_close < df['close'].iloc[-2]
+        close_near_low = (df['high'].iloc[-1] - last_close) > (df['high'].iloc[-1] - df['low'].iloc[-1]) * 0.7
         
         avg_volume = df['volume'].rolling(20).mean().iloc[-1]
         rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
@@ -96,7 +111,10 @@ class Strategy:
             return False, "price above SMA200 (avoiding counter-trend short)"
 
         if not bearish_trend:
-            return False, "price above SMA20 or SMA10 > SMA20"
+            return False, "bearish trend not strong enough (need Close < SMA10 < SMA20)"
+        
+        if not (last_candle_red and close_near_low):
+            return False, "lack of bearish price confirmation (need red candle close near low)"
         
         if not volume_spike:
             return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})"
