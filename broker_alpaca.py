@@ -113,7 +113,7 @@ class AlpacaBroker:
                 option_legs.append(OptionLegRequest(
                     symbol=leg["symbol"].upper(),
                     ratio_qty=float(leg["ratio_qty"]),
-                    side=OrderSide(leg["side"].lower()),
+                    side=OrderSide.BUY if leg["side"].lower() in ["buy", "long"] else OrderSide.SELL,
                     position_intent=PositionIntent(leg["position_intent"].lower())
                 ))
             
