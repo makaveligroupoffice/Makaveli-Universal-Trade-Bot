@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradebot.webhook</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/usmc_reeper_1775/tradebot/.venv/bin/python3</string>
+        <string>/Users/usmc_reeper_1775/tradebot/webhook_server.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/usmc_reeper_1775/tradebot</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/usmc_reeper_1775/tradebot/logs/webhook_service.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/usmc_reeper_1775/tradebot/logs/webhook_service.err.log</string>
+</dict>
+</plist>
