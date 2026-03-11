@@ -3,8 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from alpaca.data.enums import DataFeed
-from alpaca.data.historical import StockHistoricalDataClient, OptionHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest, OptionChainRequest, OptionLatestQuoteRequest, OptionSnapshotRequest
+from alpaca.data.historical import StockHistoricalDataClient, OptionHistoricalDataClient, CryptoHistoricalDataClient
+from alpaca.data.requests import (
+    StockBarsRequest, StockLatestQuoteRequest, 
+    OptionChainRequest, OptionLatestQuoteRequest, OptionSnapshotRequest,
+    CryptoBarsRequest, CryptoLatestQuoteRequest
+)
 from alpaca.data.timeframe import TimeFrame
 
 from config import Config
@@ -17,6 +21,10 @@ class MarketDataClient:
             Config.ALPACA_SECRET,
         )
         self.option_client = OptionHistoricalDataClient(
+            Config.ALPACA_KEY,
+            Config.ALPACA_SECRET,
+        )
+        self.crypto_client = CryptoHistoricalDataClient(
             Config.ALPACA_KEY,
             Config.ALPACA_SECRET,
         )
@@ -50,6 +58,19 @@ class MarketDataClient:
         end = datetime.now(UTC)
         start = end - timedelta(minutes=minutes + 5)
 
+        if "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"]):
+            # Likely crypto
+            request = CryptoBarsRequest(
+                symbol_or_symbols=symbol,
+                timeframe=TimeFrame.Minute,
+                start=start,
+                end=end
+            )
+            bars = self.crypto_client.get_crypto_bars(request)
+            if symbol not in bars.data:
+                return []
+            return bars.data[symbol]
+
         feed = DataFeed.SIP if Config.ALPACA_DATA_FEED.lower() == "sip" else DataFeed.IEX
 
         # noinspection PyArgumentList
@@ -69,6 +90,12 @@ class MarketDataClient:
         return bars.data[symbol]
 
     def get_latest_quote(self, symbol: str):
+        if "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"]):
+            # Likely crypto
+            request = CryptoLatestQuoteRequest(symbol_or_symbols=symbol)
+            quotes = self.crypto_client.get_crypto_latest_quote(request)
+            return quotes.get(symbol)
+
         feed = DataFeed.SIP if Config.ALPACA_DATA_FEED.lower() == "sip" else DataFeed.IEX
         request = StockLatestQuoteRequest(
             symbol_or_symbols=symbol,

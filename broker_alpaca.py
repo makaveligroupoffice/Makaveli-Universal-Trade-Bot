@@ -16,41 +16,47 @@ class AlpacaBroker:
             paper=Config.ALPACA_PAPER,
         )
 
-    def buy(self, symbol: str, qty: int, limit_price: float | None = None, extended_hours: bool = False):
+    def buy(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):
+        is_crypto = "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"])
+        tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
+        
         if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.BUY,
-                time_in_force=TimeInForce.DAY,
-                limit_price=round(limit_price, 2),
-                extended_hours=extended_hours
+                time_in_force=tif,
+                limit_price=round(limit_price, 2) if not is_crypto else limit_price,
+                extended_hours=extended_hours if not is_crypto else False
             )
         else:
             order = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.BUY,
-                time_in_force=TimeInForce.DAY,
+                time_in_force=tif,
             )
         return self.client.submit_order(order_data=order)
 
-    def sell(self, symbol: str, qty: int, limit_price: float | None = None, extended_hours: bool = False):
+    def sell(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):
+        is_crypto = "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"])
+        tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
+        
         if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.SELL,
-                time_in_force=TimeInForce.DAY,
-                limit_price=round(limit_price, 2),
-                extended_hours=extended_hours
+                time_in_force=tif,
+                limit_price=round(limit_price, 2) if not is_crypto else limit_price,
+                extended_hours=extended_hours if not is_crypto else False
             )
         else:
             order = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.SELL,
-                time_in_force=TimeInForce.DAY,
+                time_in_force=tif,
             )
         return self.client.submit_order(order_data=order)
 
@@ -166,7 +172,7 @@ class AlpacaBroker:
         pos = self.get_position(symbol)
         if not pos:
             raise ValueError(f"No position to close for {symbol}")
-        qty = abs(int(float(pos.qty)))
+        qty = abs(float(pos.qty))
         side = pos.side
         if side == PositionSide.LONG:
             return self.sell(symbol, qty, limit_price=limit_price, extended_hours=extended_hours)

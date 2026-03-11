@@ -4,7 +4,8 @@ A professional-grade, automated day trading bot for the Alpaca markets. Built wi
 
 ## Key Features
 
-- **Universal Strategy Execution**: Can handle **Long/Short Stocks** and **Options** (Calls, Puts, Spreads, Multi-legged).
+- **Universal Strategy Execution**: Can handle **Long/Short Stocks**, **Options** (Calls, Puts, Spreads, Multi-legged), and **Cryptocurrencies**.
+- **Crypto & Fractional Support**: Full support for fractional shares and crypto precision (e.g., BTC/USD).
 - **TradingView Integration**: Built-in support for **TradingView Screener** to find high-momentum stocks automatically.
 - **Options Support**:
     - **Single-Leg**: Long/Short Calls and Puts.
