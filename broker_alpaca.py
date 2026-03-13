@@ -6,9 +6,10 @@ from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce, Posit
 from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, LimitOrderRequest, OrderRequest, OptionLegRequest
 
 from config import Config
+from broker_base import BrokerBase
 
 
-class AlpacaBroker:
+class AlpacaBroker(BrokerBase):
     def __init__(self):
         self.client = TradingClient(
             Config.ALPACA_KEY,

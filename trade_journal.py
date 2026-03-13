@@ -26,6 +26,18 @@ class TradeJournal:
             return value.isoformat()
         return value
 
+    def record_trade(self, symbol: str, action: str, qty: float, price: float, side: str, pnl: float | None = None, reason: str | None = None) -> None:
+        payload = {
+            "symbol": symbol,
+            "action": action,
+            "qty": qty,
+            "price": price,
+            "side": side,
+            "pnl": pnl,
+            "reason": reason
+        }
+        self.record(f"{action}_filled", payload)
+
     def record(self, event_type: str, payload: dict) -> None:
         row = {
             "timestamp": datetime.now().isoformat(),

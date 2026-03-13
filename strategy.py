@@ -125,7 +125,7 @@ class Strategy:
         return True, f"bearish trend + high RVOL ({rvol:.2f}) breakout"
 
     @staticmethod
-    def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None) -> tuple[bool, str]:
+    def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None, is_manual: bool = False) -> tuple[bool, str]:
         if current_price <= 0:
             return False, "invalid current price"
 
@@ -153,19 +153,19 @@ class Strategy:
              ts_pct = ts_pct * 2.0 # Allow 2x room for strong runners
 
         if side == "buy":
-            # Stop loss
-            if current_price <= entry_price * (1 - sl_pct):
+            # Stop loss - Only if not manual or if entry_price is set
+            if entry_price > 0 and current_price <= entry_price * (1 - sl_pct):
                 return True, f"stop loss hit ({sl_pct*100:.2f}%)"
-            # Trailing stop
+            # Trailing stop - Always apply to manual trades
             if ts_pct > 0 and high_since_entry:
                 if current_price <= high_since_entry * (1 - ts_pct):
                     return True, f"trailing stop hit (high: {high_since_entry:.2f})"
-            # Take profit
-            if tp_pct > 0 and current_price >= entry_price * (1 + tp_pct):
+            # Take profit - Only if not manual or if entry_price is set
+            if not is_manual and tp_pct > 0 and current_price >= entry_price * (1 + tp_pct):
                 return True, f"take profit hit ({tp_pct*100:.2f}%)"
         else: # side == "short"
             # Stop loss (price went UP)
-            if current_price >= entry_price * (1 + sl_pct):
+            if entry_price > 0 and current_price >= entry_price * (1 + sl_pct):
                 return True, f"short stop loss hit ({sl_pct*100:.2f}%)"
             # Trailing stop (low since entry)
             low_since_entry = high_since_entry
@@ -173,12 +173,12 @@ class Strategy:
                 if current_price >= low_since_entry * (1 + ts_pct):
                     return True, f"short trailing stop hit (low: {low_since_entry:.2f})"
             # Take profit (price went DOWN)
-            if tp_pct > 0 and current_price <= entry_price * (1 - tp_pct):
+            if not is_manual and tp_pct > 0 and current_price <= entry_price * (1 - tp_pct):
                 return True, f"short take profit hit ({tp_pct*100:.2f}%)"
 
         # --- Momentum rollover (The "Scalp" exit) ---
-        # Skip this aggressive exit ONLY if we are in a VERY strong "Hold" trend
-        if not is_strong_trend:
+        # Skip this aggressive exit for manual trades or VERY strong "Hold" trends
+        if not is_manual and not is_strong_trend:
             # Re-enabled "pennies" logic: lock in small profits (0.25%+) to keep cash flow constant
             # unless we're in a clear runner.
             min_scalp_profit = float(os.getenv("SCALP_PROFIT_FLOOR", "0.25")) / 100.0

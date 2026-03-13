@@ -165,9 +165,26 @@ class LearningEngine:
         if abs(old_sl - self.state["stop_loss_pct"]) > 0.01:
             send_notification(f"🤖 Bot Evolved: Stop Loss adjusted to {self.state['stop_loss_pct']:.2f}% based on recent performance analysis.")
 
+    def evolve_code(self, analysis_report: str):
+        """
+        Suggests or applies code changes to strategy.py based on analysis.
+        This is a placeholder for LLM integration.
+        """
+        log.info(f"Learning Engine evolving strategy logic based on report: {analysis_report}")
+        # In a real scenario, this would call an LLM API (like OpenAI/Anthropic)
+        # to rewrite a specific method in strategy.py and then save it.
+        # The bot_runner's hot-reload will then pick it up.
+        
+        # Self-correction example: if we have many small losses, we could increase confirmation requirements
+        if "LOW_WIN_RATE" in analysis_report:
+            log.info("Evolving code: Tightening 'Sniper' confirmation thresholds.")
+            # Implementation would read strategy.py, modify the text, and write back.
+            pass
+
     def get_dynamic_config(self):
         return {
             "stop_loss_pct": self.state["stop_loss_pct"],
             "take_profit_pct": self.state["take_profit_pct"],
-            "min_rvol": self.state["min_rvol"]
+            "min_rvol": self.state["min_rvol"],
+            "symbol_performance": self.state.get("symbol_performance", {})
         }

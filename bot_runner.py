@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import os
+import sys
 import time
 from datetime import datetime
 
@@ -285,17 +287,40 @@ class AutoTrader:
     def _reconcile_existing_position(self):
         broker_positions = self.broker.get_all_positions()
         if not broker_positions:
+            # Check if we think we have positions but broker says no
+            if self.positions:
+                for symbol in list(self.positions.keys()):
+                    log.warning(f"Position for {symbol} exists in local state but not on broker. Clearing local state.")
+                    self._clear_position_state(symbol)
             return
 
+        broker_symbols = set()
         for pos in broker_positions:
             symbol = pos.symbol
+            broker_symbols.add(symbol)
+            qty = float(pos.qty)
+            side = "buy" if qty > 0 else "short"
+            avg_entry = float(pos.avg_entry_price)
+
             if symbol not in self.positions:
                 self.state["positions"][symbol] = {
-                    "entry_price": float(pos.avg_entry_price),
-                    "high_since_entry": float(pos.avg_entry_price),
-                    "side": "buy" if float(pos.qty) > 0 else "short"
+                    "entry_price": avg_entry,
+                    "high_since_entry": avg_entry,
+                    "side": side,
+                    "manual": True
                 }
-                log.info(f"Adopted existing position | symbol={symbol} side={self.state['positions'][symbol]['side']}")
+                log.info(f"Adopted existing position | symbol={symbol} side={side} qty={qty}")
+                send_notification(f"Bot is now monitoring your manual {side} position in {symbol} at ${avg_entry:.2f}", title="Manual Trade Adopted")
+            else:
+                # Update high_since_entry if needed
+                # We need latest price for this, will happen in try_exit
+                pass
+
+        # Cleanup positions that no longer exist on broker
+        for symbol in list(self.positions.keys()):
+            if symbol not in broker_symbols:
+                log.info(f"Position for {symbol} closed externally. Clearing local state.")
+                self._clear_position_state(symbol)
 
         self._save_state()
 
@@ -355,7 +380,7 @@ class AutoTrader:
 
             if status == "filled":
                 filled_avg_price = float(getattr(order, "filled_avg_price", 0.0))
-                filled_qty = getattr(order, "filled_qty", None)
+                filled_qty = float(getattr(order, "filled_qty", 0.0))
 
                 if side_info in {"buy", "short"}: # Entries
                     self.state["positions"][symbol] = {
@@ -366,14 +391,12 @@ class AutoTrader:
                     msg = f"{side_info.upper()} filled | {symbol} | Price: ${filled_avg_price:.2f} | Qty: {filled_qty}"
                     log.info(msg)
                     send_notification(msg, title=f"Trade {side_info.upper()} Filled")
-                    self.trade_journal.record(
-                        f"{side_info}_filled",
-                        {
-                            "symbol": symbol,
-                            "order_id": oid,
-                            "filled_avg_price": filled_avg_price,
-                            "filled_qty": filled_qty,
-                        },
+                    self.trade_journal.record_trade(
+                        symbol=symbol,
+                        action=side_info,
+                        qty=filled_qty,
+                        price=filled_avg_price,
+                        side=side_info
                     )
                     self._bump_summary("buys_filled" if side_info == "buy" else "sells_filled")
                     self.risk.record_trade(0.0)
@@ -381,22 +404,20 @@ class AutoTrader:
                     pos_info = self.positions.get(symbol, {})
                     entry_price = pos_info.get("entry_price", 0.0)
                     if side_info == "sell":
-                        pnl = (filled_avg_price - entry_price) * float(filled_qty or 0)
+                        pnl = (filled_avg_price - entry_price) * filled_qty
                     else: # cover
-                        pnl = (entry_price - filled_avg_price) * float(filled_qty or 0)
+                        pnl = (entry_price - filled_avg_price) * filled_qty
 
                     msg = f"{side_info.upper()} filled | {symbol} | Price: ${filled_avg_price:.2f} | Qty: {filled_qty} | PnL: ${pnl:.2f}"
                     log.info(msg)
                     send_notification(msg, title=f"Trade {side_info.upper()} Filled")
-                    self.trade_journal.record(
-                        f"{side_info}_filled",
-                        {
-                            "symbol": symbol,
-                            "order_id": oid,
-                            "filled_avg_price": filled_avg_price,
-                            "filled_qty": filled_qty,
-                            "pnl": pnl,
-                        },
+                    self.trade_journal.record_trade(
+                        symbol=symbol,
+                        action=side_info,
+                        qty=filled_qty,
+                        price=filled_avg_price,
+                        side=side_info,
+                        pnl=pnl
                     )
                     self._bump_summary("sells_filled" if side_info == "sell" else "buys_filled")
                     self.risk.record_trade(pnl)
@@ -596,13 +617,15 @@ class AutoTrader:
                     pos_info["high_since_entry"] = latest_price
             self._save_state()
 
+            is_manual = pos_info.get("manual", False)
             should_exit, exit_reason = self.strategy.should_sell(
                 pos_info["entry_price"], 
                 latest_price, 
                 bars, 
                 high_since_entry=pos_info["high_since_entry"],
                 side=side,
-                dynamic_config=self.dynamic_config
+                dynamic_config=self.dynamic_config,
+                is_manual=is_manual
             )
 
             if not should_exit:
@@ -662,8 +685,21 @@ class AutoTrader:
         except Exception as e:
             log.warning(f"Failed to generate morning watchlist: {e}")
 
+        import importlib
+        import strategy
+        last_strategy_mtime = os.path.getmtime("strategy.py")
+
         while True:
             try:
+                # Hot-reload logic
+                current_strategy_mtime = os.path.getmtime("strategy.py")
+                if current_strategy_mtime > last_strategy_mtime:
+                    log.info("strategy.py changed, reloading...")
+                    importlib.reload(strategy)
+                    self.strategy = strategy.Strategy() # Re-instantiate if needed
+                    last_strategy_mtime = current_strategy_mtime
+                    send_notification("New trading strategy detected and applied live!", title="Strategy Updated")
+
                 self.sync_state()
 
                 # Market clock for risk checks
