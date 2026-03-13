@@ -201,7 +201,21 @@ class LearningEngine:
                     with open("strategy.py", "w") as f:
                         f.write(new_content)
                     log.info("Strategy code evolved and saved. Hot-reload will trigger.")
-                    send_notification("Bot has autonomously improved its own code to adapt to current market conditions.", title="Autonomous Evolution")
+                    
+                    # Automatically push the evolution to GitHub
+                    try:
+                        import subprocess
+                        subprocess.run(["git", "add", "strategy.py"], check=True)
+                        commit_msg = f"chore(evolution): autonomously improve strategy logic based on performance: {analysis_report}"
+                        # Adding co-author trailer as per system rules
+                        commit_msg += "\n\nCo-authored-by: Junie <junie@jetbrains.com>"
+                        subprocess.run(["git", "commit", "-m", commit_msg], check=True)
+                        subprocess.run(["git", "push", "origin", "main"], check=True)
+                        log.info("Autonomous code evolution pushed to GitHub.")
+                    except Exception as ge:
+                        log.error(f"Failed to push autonomous evolution to GitHub: {ge}")
+
+                    send_notification("Bot has autonomously improved its own code and pushed the update to GitHub.", title="Autonomous Evolution")
             except Exception as e:
                 log.error(f"Autonomous evolution failed: {e}")
 
