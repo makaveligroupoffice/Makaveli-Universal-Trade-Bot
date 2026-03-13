@@ -749,6 +749,7 @@ class AutoTrader:
         import strategy
         last_strategy_mtime = os.path.getmtime("strategy.py")
         last_update_check = 0
+        last_log_submission = time.time() # Initial timestamp
 
         while True:
             try:
@@ -781,6 +782,16 @@ class AutoTrader:
                 self.try_exit()
                 self.try_entry(current_hhmm=current_hhmm)
                 self._reset_failures()
+
+                # Periodic Log Submission to Central Server
+                if Config.ENABLE_LOG_SUBMISSION and time.time() - last_log_submission > Config.SUBMIT_LOGS_EVERY_SECONDS:
+                    log.info("Attempting to submit paper trading logs to central server...")
+                    bot_id = os.getenv("USER", "bot_user")
+                    if self.analyzer.submit_logs_to_central_server(bot_id):
+                        last_log_submission = time.time()
+                    else:
+                        # Retry in 10 minutes if failed
+                        last_log_submission = time.time() - Config.SUBMIT_LOGS_EVERY_SECONDS + 600
 
                 if self._should_shutdown_for_day():
                     summary = self.risk.get_daily_summary()

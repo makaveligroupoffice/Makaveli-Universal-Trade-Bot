@@ -1,6 +1,7 @@
 import logging
 import os
 import datetime
+import json
 import jwt
 from functools import wraps
 
@@ -306,6 +307,37 @@ def webhook():
 @app.get("/health")
 def health():
     return jsonify({"ok": True}), 200
+
+
+@app.post("/submit_logs")
+def submit_logs():
+    if not _auth_ok(request):
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    data = request.get_json(silent=True) or {}
+    logs_to_submit = data.get("logs", [])
+    bot_id = data.get("bot_id", "unknown_bot")
+
+    if not logs_to_submit:
+        return jsonify({"ok": False, "error": "No logs provided"}), 400
+
+    # Ensure central_logs directory exists
+    central_logs_dir = os.path.join(Config.LOG_DIR, "central_logs")
+    os.makedirs(central_logs_dir, exist_ok=True)
+
+    # Store logs in a file for this bot
+    log_file_path = os.path.join(central_logs_dir, f"{bot_id}_trades.jsonl")
+    
+    try:
+        with open(log_file_path, "a", encoding="utf-8") as f:
+            for entry in logs_to_submit:
+                f.write(json.dumps(entry) + "\n")
+        
+        log.info(f"Received {len(logs_to_submit)} logs from {bot_id}")
+        return jsonify({"ok": True, "received": len(logs_to_submit)}), 200
+    except Exception as e:
+        log.error(f"Error saving submitted logs from {bot_id}: {e}")
+        return jsonify({"ok": True, "error": str(e)}), 500
 
 
 if __name__ == "__main__":

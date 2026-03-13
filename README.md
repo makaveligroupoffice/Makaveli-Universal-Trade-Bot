@@ -36,6 +36,7 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
 - **Manual Trade Monitoring**: The bot can adopt and manage trades you open manually on the Alpaca dashboard, applying its automated trailing stops to your own picks.
 - **Distributed Auto-Updates**: If you share the code or run it on multiple machines, the bot can **automatically pull code updates from your GitHub repository** and apply them live via hot-reloading. This ensures all your instances are always running the latest evolved "DNA".
 - **User Authentication & Multi-User Support**: On new downloads, the bot now includes a **Login and Registration** system to protect each user's data and access. This includes JWT token authentication for APIs and Flask-Login for browser sessions.
+- **Multi-Account Log Centralization**: You can now link multiple bot instances to a single "Master" bot to collect and analyze paper trading logs in one place. This allows you to track the combined success rate across a network of different accounts and settings.
 
 ## Project Structure
 
@@ -105,6 +106,12 @@ ngrok http 5000
 Once your ngrok tunnel is up, you can send a trade signal using the provided tool:
 ```bash
 python3 remote_trade.py buy SOFI 10 --url https://your-ngrok-url.ngrok-free.dev/webhook
+```
+
+### Viewing Network Performance
+If you have multiple bots submitting logs to your central instance, you can view the aggregated performance report by running:
+```bash
+python3 show_network_performance.py
 ```
 
 ### Options Webhook Format (JSON)

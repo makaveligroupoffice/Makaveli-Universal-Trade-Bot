@@ -106,6 +106,11 @@ class Config:
     SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-change-me")
     ALLOW_REGISTRATION: bool = os.getenv("ALLOW_REGISTRATION", "true").lower() == "true"
 
+    # Multi-Account Log Centralization
+    CENTRAL_LOG_SERVER_URL: str | None = os.getenv("CENTRAL_LOG_SERVER_URL") # e.g., http://your-ip:5000
+    ENABLE_LOG_SUBMISSION: bool = os.getenv("ENABLE_LOG_SUBMISSION", "false").lower() == "true"
+    SUBMIT_LOGS_EVERY_SECONDS: int = int(os.getenv("SUBMIT_LOGS_EVERY_SECONDS", "3600")) # 1 hour
+
     # Notifications (Discord Webhook or Pushover)
     DISCORD_WEBHOOK_URL: str | None = os.getenv("DISCORD_WEBHOOK_URL")
     PUSHOVER_USER_KEY: str | None = os.getenv("PUSHOVER_USER_KEY")
