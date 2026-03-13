@@ -101,6 +101,11 @@ class Config:
     AUTO_UPDATE_BRANCH: str = os.getenv("AUTO_UPDATE_BRANCH", "main")
     AUTO_UPDATE_REMOTE: str = os.getenv("AUTO_UPDATE_REMOTE", "origin")
 
+    # User Authentication
+    SQLALCHEMY_DATABASE_URI: str = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///users.db")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-change-me")
+    ALLOW_REGISTRATION: bool = os.getenv("ALLOW_REGISTRATION", "true").lower() == "true"
+
     # Notifications (Discord Webhook or Pushover)
     DISCORD_WEBHOOK_URL: str | None = os.getenv("DISCORD_WEBHOOK_URL")
     PUSHOVER_USER_KEY: str | None = os.getenv("PUSHOVER_USER_KEY")

@@ -35,6 +35,7 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
     - **Hot-Reloading**: Update your code while the bot is running—it will pick up changes instantly without stopping.
 - **Manual Trade Monitoring**: The bot can adopt and manage trades you open manually on the Alpaca dashboard, applying its automated trailing stops to your own picks.
 - **Distributed Auto-Updates**: If you share the code or run it on multiple machines, the bot can **automatically pull code updates from your GitHub repository** and apply them live via hot-reloading. This ensures all your instances are always running the latest evolved "DNA".
+- **User Authentication & Multi-User Support**: On new downloads, the bot now includes a **Login and Registration** system to protect each user's data and access. This includes JWT token authentication for APIs and Flask-Login for browser sessions.
 
 ## Project Structure
 

@@ -1,13 +1,18 @@
 import logging
 import os
+import datetime
+import jwt
+from functools import wraps
 
 from flask import Flask, request, jsonify
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 
 from config import Config
 from broker_alpaca import AlpacaBroker, PositionIntent, OrderSide
 from risk import RiskManager
 from notifications import send_notification
 from scanner import Scanner
+from models import db, User, bcrypt
 
 os.makedirs(Config.LOG_DIR, exist_ok=True)
 
@@ -22,6 +27,22 @@ logging.basicConfig(
 log = logging.getLogger("tradebot")
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = Config.SQLALCHEMY_DATABASE_URI
+app.config['SECRET_KEY'] = Config.SECRET_KEY
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
+bcrypt.init_app(app)
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+with app.app_context():
+    db.create_all()
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 broker = AlpacaBroker()
 risk = RiskManager()
@@ -29,13 +50,82 @@ scanner = Scanner()
 
 
 def _auth_ok(req) -> bool:
+    # 1. Check for valid JWT token in Authorization header
+    auth_header = req.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            data = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+            user = User.query.get(data['user_id'])
+            if user:
+                return True
+        except:
+            pass
+
+    # 2. Check for legacy webhook secret (for backward compatibility with TradingView alerts)
     secret = ""
     if req.is_json:
         secret = (req.get_json(silent=True) or {}).get("secret", "")
     header_secret = req.headers.get("X-Webhook-Secret", "")
-    return (secret and secret == Config.WEBHOOK_SECRET) or (
+    if (secret and secret == Config.WEBHOOK_SECRET) or (
         header_secret and header_secret == Config.WEBHOOK_SECRET
-    )
+    ):
+        return True
+
+    # 3. Check for Flask-Login session (for browser-based requests)
+    if current_user.is_authenticated:
+        return True
+
+    return False
+
+
+@app.post("/register")
+def register():
+    if not Config.ALLOW_REGISTRATION:
+        return jsonify({"ok": False, "error": "Registration is currently disabled"}), 403
+
+    data = request.get_json(silent=True) or {}
+    username = data.get("username")
+    password = data.get("password")
+    email = data.get("email")
+
+    if not username or not password:
+        return jsonify({"ok": False, "error": "Username and password required"}), 400
+
+    if User.query.filter_by(username=username).first():
+        return jsonify({"ok": False, "error": "Username already exists"}), 409
+
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    new_user = User(username=username, password=hashed_password, email=email)
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({"ok": True, "message": "User registered successfully"}), 201
+
+
+@app.post("/login")
+def login():
+    data = request.get_json(silent=True) or {}
+    username = data.get("username")
+    password = data.get("password")
+
+    user = User.query.filter_by(username=username).first()
+    if user and bcrypt.check_password_hash(user.password, password):
+        login_user(user)
+        token = jwt.encode({
+            'user_id': user.id,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        }, Config.SECRET_KEY, algorithm="HS256")
+        return jsonify({"ok": True, "token": token, "message": "Logged in successfully"}), 200
+
+    return jsonify({"ok": False, "error": "Invalid username or password"}), 401
+
+
+@app.post("/logout")
+@login_required
+def logout():
+    logout_user()
+    return jsonify({"ok": True, "message": "Logged out successfully"}), 200
 
 
 @app.post("/webhook")
