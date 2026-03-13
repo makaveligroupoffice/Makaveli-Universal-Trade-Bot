@@ -7,73 +7,111 @@ from config import Config
 
 class Strategy:
     @staticmethod
-    def should_buy(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float]:
+    def _calculate_indicators(bars):
         """
-        Returns (should_buy, reason, signal_strength)
-        signal_strength is 0.0 to 1.0
+        Calculates all required technical indicators for various strategies.
         """
         if len(bars) < 20:
-            return False, "not enough bars", 0.0
+            return None
 
         import pandas as pd
         df = pd.DataFrame([{"close": float(b.close), "high": float(b.high), "low": float(b.low), "volume": float(b.volume)} for b in bars])
         
-        # Simple manual indicators since pandas-ta is unavailable
-        df['sma20'] = df['close'].rolling(window=20).mean()
+        # --- Trend Indicators ---
         df['sma10'] = df['close'].rolling(window=10).mean()
-        df['sma200'] = df['close'].rolling(window=min(200, len(df))).mean() # Long-term trend
+        df['sma20'] = df['close'].rolling(window=20).mean()
+        df['sma50'] = df['close'].rolling(window=min(50, len(df))).mean()
+        df['sma200'] = df['close'].rolling(window=min(200, len(df))).mean()
+        df['ema12'] = df['close'].ewm(span=12, adjust=False).mean()
+        df['ema26'] = df['close'].ewm(span=26, adjust=False).mean()
         
-        # ATR-like volatility indicator
+        # --- Momentum Indicators ---
+        # RSI
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['rsi14'] = 100 - (100 / (1 + rs))
+        
+        # MACD
+        df['macd'] = df['ema12'] - df['ema26']
+        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+        df['macd_hist'] = df['macd'] - df['macd_signal']
+        
+        # --- Volatility Indicators ---
+        # Bollinger Bands
+        df['bb_mid'] = df['close'].rolling(window=20).mean()
+        df['bb_std'] = df['close'].rolling(window=20).std()
+        df['bb_upper'] = df['bb_mid'] + (df['bb_std'] * 2)
+        df['bb_lower'] = df['bb_mid'] - (df['bb_std'] * 2)
+        
+        # ATR
         df['tr'] = df.apply(lambda r: max(r['high'] - r['low'], abs(r['high'] - r['close']), abs(r['low'] - r['close'])), axis=1)
         df['atr14'] = df['tr'].rolling(window=14).mean()
         
-        last_close = df['close'].iloc[-1]
-        last_sma20 = df['sma20'].iloc[-1]
-        last_sma10 = df['sma10'].iloc[-1]
-        last_sma200 = df['sma200'].iloc[-1]
-        last_atr = df['atr14'].iloc[-1]
+        # --- Volume Indicators ---
+        df['avg_volume20'] = df['volume'].rolling(20).mean()
+        df['rvol'] = df['volume'] / df['avg_volume20']
         
-        # --- SNIPER ALIGNMENT (CORE) ---
-        long_term_bullish = last_close > last_sma200
-        # Medium-term trend: Price above SMA20 and SMA10 above SMA20
-        # Short-term trend: Price above SMA10
-        bullish_trend = last_close > last_sma20 and last_sma10 > last_sma20 and last_close > last_sma10
+        return df
+
+    @staticmethod
+    def should_buy(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float]:
+        """
+        Returns (should_buy, reason, signal_strength)
+        """
+        df = Strategy._calculate_indicators(bars)
+        if df is None:
+            return False, "not enough bars", 0.0
+
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
         
-        # Candle confirmation: Last candle must be green and close near high
-        last_candle_green = last_close > df['close'].iloc[-2]
-        # Tiered Aggression: Sniper needs 0.7, Aggressive can take 0.5
-        close_relative_pos = (last_close - df['low'].iloc[-1]) / (df['high'].iloc[-1] - df['low'].iloc[-1]) if (df['high'].iloc[-1] - df['low'].iloc[-1]) > 0 else 0
+        # Strategy Family: Trend Following / Breakout / Momentum
+        # Current logic (Sniper/Aggressive) falls into this family
         
-        # Relative Volume (RVOL) Check
-        avg_volume = df['volume'].rolling(20).mean().iloc[-1]
-        rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
+        long_term_bullish = last['close'] > last['sma200']
+        bullish_trend = last['close'] > last['sma20'] and last['sma10'] > last['sma20'] and last['close'] > last['sma10']
+        last_candle_green = last['close'] > prev['close']
+        close_relative_pos = (last['close'] - last['low']) / (last['high'] - last['low']) if (last['high'] - last['low']) > 0 else 0
         
         min_rvol = dynamic_config.get("min_rvol", 1.8) if dynamic_config else 1.8
-        volume_spike = rvol > min_rvol
-        
-        # Don't enter if volatility is extreme
-        volatility_excessive = last_atr > (last_close * 0.02)
+        volume_spike = last['rvol'] > min_rvol
+        volatility_excessive = last['atr14'] > (last['close'] * 0.02)
 
-        # --- TIERED DECISION ENGINE ---
-        # TIER 1: SNIPER (75%+ Win Rate Target)
-        if long_term_bullish and bullish_trend and last_candle_green and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
-            return True, f"SNIPER: trend + high RVOL ({rvol:.2f}) breakout", 1.0
+        active = Config.ACTIVE_STRATEGIES
+        
+        # 1. Trend Following Strategy (Sniper Logic)
+        if "TREND" in active:
+            if long_term_bullish and bullish_trend and last_candle_green and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
+                return True, f"TREND/SNIPER: trend + high RVOL ({last['rvol']:.2f}) breakout", 1.0
+
+        # 2. RSI Trading Strategy (Mean Reversion / Overbought-Oversold)
+        if "RSI" in active:
+            if last['rsi14'] < 30 and last['close'] > prev['close']:
+                return True, f"RSI: oversold bounce (RSI: {last['rsi14']:.2f})", 0.7
+
+        # 3. Bollinger Bands Strategy (Mean Reversion)
+        if "BOLLINGER" in active:
+            if last['close'] < last['bb_lower'] and last['close'] > prev['close']:
+                 return True, "BOLLINGER: lower band bounce", 0.7
+
+        # 4. MACD Divergence Strategy (Momentum Reversal)
+        if "MACD" in active:
+            if last['macd_hist'] > 0 and prev['macd_hist'] <= 0:
+                return True, f"MACD: bullish crossover (hist: {last['macd_hist']:.4f})", 0.7
+
+        # 5. Breakout Trading Strategy (Range Breakout)
+        if "BREAKOUT" in active:
+            highest_20 = df['high'].rolling(20).max().iloc[-2]
+            if last['close'] > highest_20 and volume_spike:
+                return True, f"BREAKOUT: new 20-bar high with volume (RVOL: {last['rvol']:.2f})", 0.8
 
         # TIER 2: AGGRESSIVE (Taking chances for growth)
-        # We drop SMA200 requirement and loosen candle strength, but still need volume and basic trend
-        aggressive_trend = last_close > last_sma10 and last_sma10 > last_sma20
-        if aggressive_trend and last_candle_green and close_relative_pos >= 0.5 and volume_spike and not volatility_excessive:
-            return True, f"AGGRESSIVE: momentum play (RVOL: {rvol:.2f})", 0.6
-
-        # Rejection reasons for logs
-        if not bullish_trend and not aggressive_trend:
-            return False, "trend not strong enough (need Close > SMA10 > SMA20)", 0.0
-        
-        if not volume_spike:
-            return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})", 0.0
-            
-        if volatility_excessive:
-            return False, "volatility too high (ATR > 2%)", 0.0
+        if "AGGRESSIVE" in active:
+            aggressive_trend = last['close'] > last['sma10'] and last['sma10'] > last['sma20']
+            if aggressive_trend and last_candle_green and close_relative_pos >= 0.5 and volume_spike and not volatility_excessive:
+                return True, f"AGGRESSIVE: momentum play (RVOL: {last['rvol']:.2f})", 0.6
 
         return False, "failed all entry tiers", 0.0
 
@@ -82,60 +120,55 @@ class Strategy:
         """
         Returns (should_short, reason, signal_strength)
         """
-        if len(bars) < 20:
+        df = Strategy._calculate_indicators(bars)
+        if df is None:
             return False, "not enough bars", 0.0
 
-        import pandas as pd
-        df = pd.DataFrame([{"close": float(b.close), "high": float(b.high), "low": float(b.low), "volume": float(b.volume)} for b in bars])
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
         
-        df['sma20'] = df['close'].rolling(window=20).mean()
-        df['sma10'] = df['close'].rolling(window=10).mean()
-        df['sma200'] = df['close'].rolling(window=min(200, len(df))).mean()
-        
-        # ATR-like volatility indicator
-        df['tr'] = df.apply(lambda r: max(r['high'] - r['low'], abs(r['high'] - r['close']), abs(r['low'] - r['close'])), axis=1)
-        df['atr14'] = df['tr'].rolling(window=14).mean()
-        
-        last_close = df['close'].iloc[-1]
-        last_sma20 = df['sma20'].iloc[-1]
-        last_sma10 = df['sma10'].iloc[-1]
-        last_sma200 = df['sma200'].iloc[-1]
-        last_atr = df['atr14'].iloc[-1]
-        
-        long_term_bearish = last_close < last_sma200
-        # Medium-term trend: Price below SMA20 and SMA10 below SMA20
-        # Short-term trend: Price below SMA10
-        bearish_trend = last_close < last_sma20 and last_sma10 < last_sma20 and last_close < last_sma10
-        
-        # Candle confirmation: Last candle must be red and close near low
-        last_candle_red = last_close < df['close'].iloc[-2]
-        close_relative_pos = (df['high'].iloc[-1] - last_close) / (df['high'].iloc[-1] - df['low'].iloc[-1]) if (df['high'].iloc[-1] - df['low'].iloc[-1]) > 0 else 0
-        
-        avg_volume = df['volume'].rolling(20).mean().iloc[-1]
-        rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
+        long_term_bearish = last['close'] < last['sma200']
+        bearish_trend = last['close'] < last['sma20'] and last['sma10'] < last['sma20'] and last['close'] < last['sma10']
+        last_candle_red = last['close'] < prev['close']
+        close_relative_pos = (last['high'] - last['close']) / (last['high'] - last['low']) if (last['high'] - last['low']) > 0 else 0
         
         min_rvol = dynamic_config.get("min_rvol", 1.8) if dynamic_config else 1.8
-        volume_spike = rvol > min_rvol
-        
-        volatility_excessive = last_atr > (last_close * 0.02)
+        volume_spike = last['rvol'] > min_rvol
+        volatility_excessive = last['atr14'] > (last['close'] * 0.02)
 
-        # TIER 1: SNIPER
-        if long_term_bearish and bearish_trend and last_candle_red and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
-            return True, f"SNIPER: bearish trend + high RVOL ({rvol:.2f}) breakout", 1.0
+        active = Config.ACTIVE_STRATEGIES
 
-        # TIER 2: AGGRESSIVE
-        aggressive_bearish = last_close < last_sma10 and last_sma10 < last_sma20
-        if aggressive_bearish and last_candle_red and close_relative_pos >= 0.5 and volume_spike and not volatility_excessive:
-            return True, f"AGGRESSIVE: bearish momentum play (RVOL: {rvol:.2f})", 0.6
+        # 1. Bearish Trend Following (Sniper)
+        if "TREND" in active:
+            if long_term_bearish and bearish_trend and last_candle_red and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
+                return True, f"SNIPER SHORT: trend + high RVOL ({last['rvol']:.2f})", 1.0
 
-        if not bearish_trend and not aggressive_bearish:
-            return False, "bearish trend not strong enough (need Close < SMA10 < SMA20)", 0.0
-        
-        if not volume_spike:
-            return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})", 0.0
-            
-        if volatility_excessive:
-             return False, "volatility too high (ATR > 2%)", 0.0
+        # 2. RSI Overbought (Mean Reversion)
+        if "RSI" in active:
+            if last['rsi14'] > 70 and last['close'] < prev['close']:
+                return True, f"RSI: overbought reversal (RSI: {last['rsi14']:.2f})", 0.7
+
+        # 3. Bollinger Bands Upper Reversal
+        if "BOLLINGER" in active:
+            if last['close'] > last['bb_upper'] and last['close'] < prev['close']:
+                return True, "BOLLINGER: upper band rejection", 0.7
+
+        # 4. MACD Bearish Crossover
+        if "MACD" in active:
+            if last['macd_hist'] < 0 and prev['macd_hist'] >= 0:
+                return True, f"MACD: bearish crossover (hist: {last['macd_hist']:.4f})", 0.7
+
+        # 5. Breakout Trading Strategy (Bearish Breakout)
+        if "BREAKOUT" in active:
+            lowest_20 = df['low'].rolling(20).min().iloc[-2]
+            if last['close'] < lowest_20 and volume_spike:
+                return True, f"BREAKOUT: new 20-bar low with volume (RVOL: {last['rvol']:.2f})", 0.8
+
+        # Bearish Aggressive
+        if "AGGRESSIVE" in active:
+            aggressive_bearish = last['close'] < last['sma10'] and last['sma10'] < last['sma20']
+            if aggressive_bearish and last_candle_red and close_relative_pos >= 0.5 and volume_spike and not volatility_excessive:
+                return True, f"AGGRESSIVE SHORT: momentum play (RVOL: {last['rvol']:.2f})", 0.6
 
         return False, "failed all entry tiers", 0.0
 
@@ -223,7 +256,30 @@ class Strategy:
         Calculates legs for various option strategies based on the current option chain.
         Supported: covered_call, cash_secured_put, long_call, long_put, bull_call_spread, bear_put_spread, straddle
         """
-        # This is a placeholder for complex strategy logic
-        # In a real scenario, you'd pick the best expiration and strike
-        # For now, we return None as a signal that manual strike selection is preferred via webhook
+        if strategy_name == "long_call":
+            # Simple ATM or slightly OTM call
+            best_strike = None
+            min_diff = float('inf')
+            for strike in chain.strikes:
+                if strike >= current_price:
+                    diff = strike - current_price
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_strike = strike
+            if best_strike:
+                return [{"symbol": f"{underlying_symbol}", "strike": best_strike, "side": "buy", "type": "call"}]
+
+        elif strategy_name == "long_put":
+            # Simple ATM or slightly OTM put
+            best_strike = None
+            min_diff = float('inf')
+            for strike in chain.strikes:
+                if strike <= current_price:
+                    diff = current_price - strike
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_strike = strike
+            if best_strike:
+                return [{"symbol": f"{underlying_symbol}", "strike": best_strike, "side": "buy", "type": "put"}]
+
         return None

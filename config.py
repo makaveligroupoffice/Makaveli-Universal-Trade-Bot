@@ -71,6 +71,15 @@ class Config:
     TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "2.5")) # Increased from 2.0
     TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "1.0")) # Enabled by default
 
+    # Multi-Strategy Selection
+    # Comma-separated list of strategies to enable:
+    # TREND, RSI, BOLLINGER, MACD, BREAKOUT, AGGRESSIVE
+    ACTIVE_STRATEGIES: tuple[str, ...] = tuple(
+        s.strip().upper()
+        for s in os.getenv("ACTIVE_STRATEGIES", "TREND,RSI,BOLLINGER,MACD,BREAKOUT,AGGRESSIVE").split(",")
+        if s.strip()
+    )
+
     # Flask
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "5000"))
