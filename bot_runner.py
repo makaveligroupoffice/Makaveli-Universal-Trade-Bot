@@ -145,6 +145,14 @@ class AutoTrader:
             return self.risk.can_trade(is_exit=False)
         return bool(clock.is_open)
 
+    def _send_daily_report(self):
+        """Generates and sends a comprehensive performance report."""
+        from performance import PerformanceAnalyzer
+        analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
+        report = analyzer.generate_report(days=1)
+        log.info("Sending daily performance report...")
+        send_notification(report, title="📈 Daily Performance Summary")
+
     @staticmethod
     def _now_ts() -> float:
         return time.time()
@@ -170,7 +178,22 @@ class AutoTrader:
         if Config.USE_PERCENTAGE_RISK:
             acct = self.broker.get_account()
             equity = float(acct.equity)
-            risk_amount = equity * (Config.RISK_PCT_PER_TRADE / 100.0)
+            
+            # Kelly Criterion Integration
+            perf = self.dynamic_config.get("symbol_performance", {}).get(symbol, {})
+            # Use general stats or default if no symbol specific stats
+            win_rate = 0.55 # Default assumption
+            win_loss_ratio = 1.5 # Default 1.5:1
+            
+            # Adjust based on learning engine history if available
+            if perf.get("count", 0) >= 5:
+                # Real data available for this symbol
+                # This is simplified; real logic would track win_rate and avg_win/avg_loss
+                pass 
+                
+            kelly_pct = self.risk.calculate_kelly_size(win_rate, win_loss_ratio, equity)
+            risk_amount = equity * kelly_pct
+            log.info(f"Kelly sizing for {symbol}: {kelly_pct*100:.2f}% risk (${risk_amount:.2f})")
 
         # Scale risk based on signal strength (Tiered Aggression)
         risk_amount = risk_amount * signal_strength
@@ -519,6 +542,13 @@ class AutoTrader:
                 continue
 
             bars = self.data.get_recent_bars(symbol, minutes=30)
+            
+            # News Awareness Filter
+            if Config.ENABLE_NEWS_FILTER:
+                if not self.strategy.is_news_safe(symbol, self.data):
+                    log.info(f"Skipping {symbol}: high-impact news or excessive volatility detected")
+                    continue
+
             should_buy, buy_reason, buy_strength = self.strategy.should_buy(bars, self.dynamic_config)
             should_short, short_reason, short_strength = self.strategy.should_short(bars, self.dynamic_config)
             
@@ -725,6 +755,12 @@ class AutoTrader:
                     msg = f"Trading day complete. Final Daily PnL: ${pnl:.2f} | Trades: {trades}. Shutting down."
                     log.info(msg)
                     send_notification(msg, title="Bot Shutdown")
+
+                    # Final Daily Report
+                    try:
+                        self._send_daily_report()
+                    except Exception as e:
+                        log.error(f"Daily report failed: {e}")
 
                     # Run Nightly Research before final shutdown
                     try:

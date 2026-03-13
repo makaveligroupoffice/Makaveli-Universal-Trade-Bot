@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import pandas as pd
 from datetime import datetime
 
 from config import Config
@@ -16,6 +17,11 @@ class Strategy:
 
         import pandas as pd
         df = pd.DataFrame([{"close": float(b.close), "high": float(b.high), "low": float(b.low), "volume": float(b.volume)} for b in bars])
+        
+        # --- Multi-Timeframe Logic (Internal Emulation) ---
+        # If we have 200 bars of 1m, the last 60 bars represent 1 hour.
+        # We can calculate an 'Hourly' trend within the 1m data.
+        df['sma_hourly'] = df['close'].rolling(window=60).mean()
         
         # --- Trend Indicators ---
         df['sma10'] = df['close'].rolling(window=10).mean()
@@ -81,9 +87,12 @@ class Strategy:
 
         active = Config.ACTIVE_STRATEGIES
         
+        # TIER 1: SNIPER (Standard High Conviction)
+        hourly_trend_bullish = last['close'] > last['sma_hourly'] if not pd.isna(last['sma_hourly']) else True
+        
         # 1. Trend Following Strategy (Sniper Logic)
         if "TREND" in active:
-            if long_term_bullish and bullish_trend and last_candle_green and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
+            if long_term_bullish and hourly_trend_bullish and bullish_trend and last_candle_green and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
                 return True, f"TREND/SNIPER: trend + high RVOL ({last['rvol']:.2f}) breakout", 1.0
 
         # 2. RSI Trading Strategy (Mean Reversion / Overbought-Oversold)
@@ -114,6 +123,25 @@ class Strategy:
                 return True, f"AGGRESSIVE: momentum play (RVOL: {last['rvol']:.2f})", 0.6
 
         return False, "failed all entry tiers", 0.0
+
+    @staticmethod
+    def is_news_safe(symbol: str, market_data_client) -> bool:
+        """
+        Avoid trading if there's high-impact news or too many recent news items (excessive volatility).
+        """
+        news = market_data_client.get_news(symbol, days=1)
+        # Check for specific negative keywords in headlines
+        negative_keywords = ["lawsuit", "investigation", "bankruptcy", "fraud", "hacked"]
+        
+        for item in news:
+            if any(word in item.headline.lower() for word in negative_keywords):
+                return False
+                
+        # If news frequency is extremely high (>10 in 24h), it might be too volatile
+        if len(news) > 10:
+            return False
+            
+        return True
 
     @staticmethod
     def should_short(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float]:

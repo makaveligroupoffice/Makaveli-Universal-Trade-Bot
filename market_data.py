@@ -156,3 +156,23 @@ class MarketDataClient:
         request = OptionSnapshotRequest(symbol_or_symbols=symbol)
         snapshots = self.option_client.get_option_snapshot(request)
         return snapshots.get(symbol)
+
+    def get_news(self, symbol: str | None = None, days: int = 1):
+        """Fetch news for a symbol or general market news."""
+        from alpaca.data.requests import NewsRequest
+        from alpaca.data.historical import NewsClient
+        
+        client = NewsClient(Config.ALPACA_KEY, Config.ALPACA_SECRET)
+        
+        start = datetime.now(UTC) - timedelta(days=days)
+        request = NewsRequest(
+            symbols=[symbol] if symbol else None,
+            start=start,
+            limit=10
+        )
+        
+        try:
+            return client.get_news(request).news
+        except Exception as e:
+            print(f"Error fetching news: {e}")
+            return []

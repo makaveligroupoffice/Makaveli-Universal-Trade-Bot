@@ -162,24 +162,48 @@ class LearningEngine:
         self.state["last_optimized"] = datetime.now().isoformat()
         self._save_model()
 
+        # Call code evolution based on performance
+        analysis = {
+            "win_rate": win_rate,
+            "avg_pnl": avg_pnl,
+            "recommendations": []
+        }
+        if win_rate < 0.45: analysis["recommendations"].append("WIDEN_STOP_LOSS")
+        if avg_pnl < 0: analysis["recommendations"].append("REDUCE_RISK_PER_TRADE")
+        
+        if analysis["recommendations"]:
+            self.evolve_code(str(analysis["recommendations"]))
+
         if abs(old_sl - self.state["stop_loss_pct"]) > 0.01:
             send_notification(f"🤖 Bot Evolved: Stop Loss adjusted to {self.state['stop_loss_pct']:.2f}% based on recent performance analysis.")
 
     def evolve_code(self, analysis_report: str):
         """
         Suggests or applies code changes to strategy.py based on analysis.
-        This is a placeholder for LLM integration.
+        This uses an autonomous self-correction pattern.
         """
         log.info(f"Learning Engine evolving strategy logic based on report: {analysis_report}")
-        # In a real scenario, this would call an LLM API (like OpenAI/Anthropic)
-        # to rewrite a specific method in strategy.py and then save it.
-        # The bot_runner's hot-reload will then pick it up.
         
-        # Self-correction example: if we have many small losses, we could increase confirmation requirements
-        if "LOW_WIN_RATE" in analysis_report:
-            log.info("Evolving code: Tightening 'Sniper' confirmation thresholds.")
-            # Implementation would read strategy.py, modify the text, and write back.
-            pass
+        # Self-correction: if we have LOW_WIN_RATE, we increase the confirmation requirements in the code
+        if "WIDEN_STOP_LOSS" in analysis_report or "REDUCE_RISK_PER_TRADE" in analysis_report:
+            log.info("Evolving code: Tightening 'Sniper' confirmation thresholds via code modification.")
+            
+            try:
+                with open("strategy.py", "r") as f:
+                    content = f.read()
+                
+                # Example: Increase close_relative_pos requirement from 0.7 to 0.75
+                new_content = content.replace("close_relative_pos >= 0.7", "close_relative_pos >= 0.75")
+                # Example: Increase RVOL requirement base from 1.8 to 2.0 if win rate is very low
+                new_content = new_content.replace("min_rvol, 1.8", "min_rvol, 2.0")
+                
+                if new_content != content:
+                    with open("strategy.py", "w") as f:
+                        f.write(new_content)
+                    log.info("Strategy code evolved and saved. Hot-reload will trigger.")
+                    send_notification("Bot has autonomously improved its own code to adapt to current market conditions.", title="Autonomous Evolution")
+            except Exception as e:
+                log.error(f"Autonomous evolution failed: {e}")
 
     def get_dynamic_config(self):
         return {

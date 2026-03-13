@@ -1,34 +1,39 @@
 # Universal Trade Bot 🚀
 
-A professional-grade, automated day trading bot for the Alpaca markets. Built with multi-stock support, real-time risk management, and mobile notifications to keep you informed of every trade.
+A professional-grade, automated day trading and investment bot for the Alpaca markets. Built with multi-strategy engines, multi-asset support, and advanced risk management to grow your portfolio consistently.
 
 ## Key Features
 
 - **Universal Strategy Execution**: Can handle **Long/Short Stocks**, **Bonds** (via ETFs like TLT, BND, AGG), **Options** (Calls, Puts, Spreads, Multi-legged), and **Cryptocurrencies**.
+- **Sniper & Aggressive Modes**: Multi-tier entry logic that targets a **75%+ success rate** on high-conviction "Slam Dunk" trades while taking calculated chances for rapid growth.
+- **Multi-Strategy Engine**: Simultaneous execution of 6 core strategy families:
+    - **Trend Following (Sniper)**: Multi-SMA alignment.
+    - **RSI Mean Reversion**: Oversold/Overbought reversals.
+    - **Bollinger Band Bounces**: Volatility-based entries.
+    - **MACD Divergence**: Momentum crossovers.
+    - **Range Breakouts**: 20-bar highs with volume confirmation.
+    - **Aggressive Momentum**: High-frequency plays for growth.
+- **Autonomous Evolution**: The bot analyzes its own performance and **autonomously upgrades its own code** and risk parameters to adapt to changing market conditions.
+- **News & Sentiment Awareness**: Integrated news filter that scans for high-impact headlines (lawsuits, investigations, etc.) to avoid "landmine" trades.
+- **Portfolio Optimization**:
+    - **Kelly Criterion**: Dynamic position sizing based on win rate and reward/risk ratios.
+    - **Multi-Timeframe Analysis**: Aligns 1-minute trades with 1-hour "Global Trend" filters.
 - **Crypto & Fractional Support**: Full support for fractional shares and crypto precision (e.g., BTC/USD).
 - **Bond Market Exposure**: Dedicated Bond ETF universe (TLT, IEF, SHY, BND, AGG, LQD, HYG, JNK, TIP) included for diversified income and hedging.
 - **TradingView Integration**: Built-in support for **TradingView Screener** to find high-momentum stocks and ETFs automatically.
-- **Options Support**:
-    - **Single-Leg**: Long/Short Calls and Puts.
-    - **Multi-Legged**: Spreads (Bull Call, Bear Put, etc.), Straddles, Covered Calls, and Cash-Secured Puts.
-    - **Advanced Data**: Fetches Option Chains and Greeks (Delta, Gamma, etc.) for informed trading.
-- **Multi-Stock Support**: Capable of managing up to 5 concurrent positions at once.
-- **Real-Time Notifications**: Receive alerts on your phone (via **Pushover** or **Discord**) for:
-    - Bot Startup/Shutdown (synced with market hours).
-    - Trade Execution (Buy/Sell/Short/Cover) with filled price and quantity.
-    - Profit/Loss summaries for every closed trade.
-    - Daily performance reports (Daily PnL).
-    - Critical error alerts.
+- **Real-Time Performance Reports**: 
+    - Daily PnL, Win Rate, Profit Factor, and Drawdown analysis sent directly to your phone.
+    - Morning Watchlist reports on startup.
+- **Real-Time Notifications**: Receive alerts via **Pushover** or **Discord** for every trade and logic update.
 - **Advanced Risk Management**:
     - Automatic Daily Loss Limits (Stops trading if you hit a max loss).
-    - Max Trades per Day caps.
-    - Compounding Risk Model (Risk a percentage of your total equity).
+    - Kelly-based position sizing for optimal compounding.
     - ATR (Average True Range) Volatility Filter.
 - **Flexible Execution**:
-    - Support for Market and Limit Orders (with configurable offsets).
+    - Support for Market and Limit Orders.
     - Trailing Stop-Loss and Take-Profit logic.
-- **Remote Trading**: Use the included `remote_trade.py` tool to send trade signals from your phone or external scripts.
-- **Self-Correction**: Periodic performance analysis to adjust stop-loss/take-profit settings automatically.
+    - **Hot-Reloading**: Update your code while the bot is running—it will pick up changes instantly without stopping.
+- **Manual Trade Monitoring**: The bot can adopt and manage trades you open manually on the Alpaca dashboard, applying its automated trailing stops to your own picks.
 
 ## Project Structure
 

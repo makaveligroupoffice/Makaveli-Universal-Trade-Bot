@@ -98,6 +98,26 @@ class RiskManager:
             
         return True
 
+    def calculate_kelly_size(self, win_rate: float, win_loss_ratio: float, account_equity: float) -> float:
+        """
+        Calculates the optimal position size using the Kelly Criterion.
+        Formula: K% = W - (1 - W) / R
+        W = Win Rate, R = Win/Loss Ratio
+        """
+        if win_loss_ratio <= 0:
+            return Config.RISK_PCT_PER_TRADE / 100.0
+            
+        # Standard Kelly
+        kelly_pct = win_rate - (1 - win_rate) / win_loss_ratio
+        
+        # Use Fractional Kelly (usually 0.5) to be conservative
+        fractional_kelly = Config.KELLY_FRACTION * kelly_pct
+        
+        # Clamp between a minimum (0.5%) and maximum (Config.MAX_POSITION_SIZE_PCT)
+        clamped_kelly = max(0.005, min(fractional_kelly, Config.MAX_ACCOUNT_DEPLOYMENT_PCT / 200.0))
+        
+        return clamped_kelly
+
     def record_trade(self, pnl_change: float = 0.0) -> None:
         self._roll_day_if_needed()
         # Increment trade count for any trade (entry or exit)

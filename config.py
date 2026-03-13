@@ -71,6 +71,10 @@ class Config:
     TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "2.5")) # Increased from 2.0
     TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "1.0")) # Enabled by default
 
+    # Advanced Portfolio Management
+    KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.5"))
+    ENABLE_NEWS_FILTER: bool = os.getenv("ENABLE_NEWS_FILTER", "true").lower() == "true"
+    
     # Multi-Strategy Selection
     # Comma-separated list of strategies to enable:
     # TREND, RSI, BOLLINGER, MACD, BREAKOUT, AGGRESSIVE
