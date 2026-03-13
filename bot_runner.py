@@ -155,7 +155,7 @@ class AutoTrader:
             return 0.0
         return time.time() - float(start_ts)
 
-    def _calc_qty(self, price: float, symbol: str) -> float:
+    def _calc_qty(self, price: float, symbol: str, signal_strength: float = 1.0) -> float:
         if price <= 0:
             return 0.0
 
@@ -171,6 +171,9 @@ class AutoTrader:
             acct = self.broker.get_account()
             equity = float(acct.equity)
             risk_amount = equity * (Config.RISK_PCT_PER_TRADE / 100.0)
+
+        # Scale risk based on signal strength (Tiered Aggression)
+        risk_amount = risk_amount * signal_strength
 
         qty = risk_amount / risk_per_share
         
@@ -516,17 +519,20 @@ class AutoTrader:
                 continue
 
             bars = self.data.get_recent_bars(symbol, minutes=30)
-            should_buy, buy_reason = self.strategy.should_buy(bars, self.dynamic_config)
-            should_short, short_reason = self.strategy.should_short(bars, self.dynamic_config)
+            should_buy, buy_reason, buy_strength = self.strategy.should_buy(bars, self.dynamic_config)
+            should_short, short_reason, short_strength = self.strategy.should_short(bars, self.dynamic_config)
             
             action = None
             reason = None
+            strength = 0.0
             if should_buy:
                 action = "buy"
                 reason = buy_reason
+                strength = buy_strength
             elif should_short:
                 action = "short"
                 reason = short_reason
+                strength = short_strength
             
             if not action:
                 continue
@@ -535,7 +541,7 @@ class AutoTrader:
             if not latest_price or latest_price <= 0:
                 continue
 
-            qty = self._calc_qty(latest_price, symbol)
+            qty = self._calc_qty(latest_price, symbol, signal_strength=strength)
             if qty <= 0:
                 continue
 

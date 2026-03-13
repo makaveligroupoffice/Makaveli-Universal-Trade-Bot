@@ -7,9 +7,13 @@ from config import Config
 
 class Strategy:
     @staticmethod
-    def should_buy(bars, dynamic_config: dict | None = None) -> tuple[bool, str]:
+    def should_buy(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float]:
+        """
+        Returns (should_buy, reason, signal_strength)
+        signal_strength is 0.0 to 1.0
+        """
         if len(bars) < 20:
-            return False, "not enough bars"
+            return False, "not enough bars", 0.0
 
         import pandas as pd
         df = pd.DataFrame([{"close": float(b.close), "high": float(b.high), "low": float(b.low), "volume": float(b.volume)} for b in bars])
@@ -29,8 +33,7 @@ class Strategy:
         last_sma200 = df['sma200'].iloc[-1]
         last_atr = df['atr14'].iloc[-1]
         
-        # Momentum + Trend following
-        # 75% Win Rate Tip: Only trade in alignment with the long-term trend (SMA200)
+        # --- SNIPER ALIGNMENT (CORE) ---
         long_term_bullish = last_close > last_sma200
         # Medium-term trend: Price above SMA20 and SMA10 above SMA20
         # Short-term trend: Price above SMA10
@@ -38,40 +41,49 @@ class Strategy:
         
         # Candle confirmation: Last candle must be green and close near high
         last_candle_green = last_close > df['close'].iloc[-2]
-        close_near_high = (last_close - df['low'].iloc[-1]) > (df['high'].iloc[-1] - df['low'].iloc[-1]) * 0.7
+        # Tiered Aggression: Sniper needs 0.7, Aggressive can take 0.5
+        close_relative_pos = (last_close - df['low'].iloc[-1]) / (df['high'].iloc[-1] - df['low'].iloc[-1]) if (df['high'].iloc[-1] - df['low'].iloc[-1]) > 0 else 0
         
-        # Relative Volume (RVOL) Check: Volume must be significantly higher than average
+        # Relative Volume (RVOL) Check
         avg_volume = df['volume'].rolling(20).mean().iloc[-1]
         rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
         
-        # Evolution: Use learned min_rvol if available
         min_rvol = dynamic_config.get("min_rvol", 1.8) if dynamic_config else 1.8
-        volume_spike = rvol > min_rvol # Increased threshold for better quality signals
+        volume_spike = rvol > min_rvol
         
-        # Don't enter if volatility is extreme (relative to average price)
-        volatility_excessive = last_atr > (last_close * 0.02) # > 2% of price per bar is high volatility
+        # Don't enter if volatility is extreme
+        volatility_excessive = last_atr > (last_close * 0.02)
 
-        if not long_term_bullish:
-            return False, "price below SMA200 (avoiding counter-trend)"
+        # --- TIERED DECISION ENGINE ---
+        # TIER 1: SNIPER (75%+ Win Rate Target)
+        if long_term_bullish and bullish_trend and last_candle_green and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
+            return True, f"SNIPER: trend + high RVOL ({rvol:.2f}) breakout", 1.0
 
-        if not bullish_trend:
-            return False, "trend not strong enough (need Close > SMA10 > SMA20)"
-        
-        if not (last_candle_green and close_near_high):
-            return False, "lack of price confirmation (need green candle close near high)"
+        # TIER 2: AGGRESSIVE (Taking chances for growth)
+        # We drop SMA200 requirement and loosen candle strength, but still need volume and basic trend
+        aggressive_trend = last_close > last_sma10 and last_sma10 > last_sma20
+        if aggressive_trend and last_candle_green and close_relative_pos >= 0.5 and volume_spike and not volatility_excessive:
+            return True, f"AGGRESSIVE: momentum play (RVOL: {rvol:.2f})", 0.6
+
+        # Rejection reasons for logs
+        if not bullish_trend and not aggressive_trend:
+            return False, "trend not strong enough (need Close > SMA10 > SMA20)", 0.0
         
         if not volume_spike:
-            return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})"
+            return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})", 0.0
             
         if volatility_excessive:
-             return False, "volatility too high (ATR > 2%)"
+            return False, "volatility too high (ATR > 2%)", 0.0
 
-        return True, f"trend + high RVOL ({rvol:.2f}) breakout"
+        return False, "failed all entry tiers", 0.0
 
     @staticmethod
-    def should_short(bars, dynamic_config: dict | None = None) -> tuple[bool, str]:
+    def should_short(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float]:
+        """
+        Returns (should_short, reason, signal_strength)
+        """
         if len(bars) < 20:
-            return False, "not enough bars"
+            return False, "not enough bars", 0.0
 
         import pandas as pd
         df = pd.DataFrame([{"close": float(b.close), "high": float(b.high), "low": float(b.low), "volume": float(b.volume)} for b in bars])
@@ -97,7 +109,7 @@ class Strategy:
         
         # Candle confirmation: Last candle must be red and close near low
         last_candle_red = last_close < df['close'].iloc[-2]
-        close_near_low = (df['high'].iloc[-1] - last_close) > (df['high'].iloc[-1] - df['low'].iloc[-1]) * 0.7
+        close_relative_pos = (df['high'].iloc[-1] - last_close) / (df['high'].iloc[-1] - df['low'].iloc[-1]) if (df['high'].iloc[-1] - df['low'].iloc[-1]) > 0 else 0
         
         avg_volume = df['volume'].rolling(20).mean().iloc[-1]
         rvol = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 0
@@ -107,22 +119,25 @@ class Strategy:
         
         volatility_excessive = last_atr > (last_close * 0.02)
 
-        if not long_term_bearish:
-            return False, "price above SMA200 (avoiding counter-trend short)"
+        # TIER 1: SNIPER
+        if long_term_bearish and bearish_trend and last_candle_red and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
+            return True, f"SNIPER: bearish trend + high RVOL ({rvol:.2f}) breakout", 1.0
 
-        if not bearish_trend:
-            return False, "bearish trend not strong enough (need Close < SMA10 < SMA20)"
-        
-        if not (last_candle_red and close_near_low):
-            return False, "lack of bearish price confirmation (need red candle close near low)"
+        # TIER 2: AGGRESSIVE
+        aggressive_bearish = last_close < last_sma10 and last_sma10 < last_sma20
+        if aggressive_bearish and last_candle_red and close_relative_pos >= 0.5 and volume_spike and not volatility_excessive:
+            return True, f"AGGRESSIVE: bearish momentum play (RVOL: {rvol:.2f})", 0.6
+
+        if not bearish_trend and not aggressive_bearish:
+            return False, "bearish trend not strong enough (need Close < SMA10 < SMA20)", 0.0
         
         if not volume_spike:
-            return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})"
+            return False, f"low relative volume (RVOL: {rvol:.2f} < {min_rvol})", 0.0
             
         if volatility_excessive:
-            return False, "volatility too high (ATR > 2%)"
+             return False, "volatility too high (ATR > 2%)", 0.0
 
-        return True, f"bearish trend + high RVOL ({rvol:.2f}) breakout"
+        return False, "failed all entry tiers", 0.0
 
     @staticmethod
     def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None, is_manual: bool = False) -> tuple[bool, str]:
