@@ -12,7 +12,7 @@ class AutoUpdater:
     This allows distributed instances of the bot to stay in sync.
     """
     def __init__(self):
-        self.enabled = os.getenv("ENABLE_AUTO_UPDATE", "false").lower() == "true"
+        self.enabled = os.getenv("ENABLE_AUTO_UPDATE", "true").lower() == "true"
         self.branch = os.getenv("AUTO_UPDATE_BRANCH", "main")
         self.remote = os.getenv("AUTO_UPDATE_REMOTE", "origin")
 
