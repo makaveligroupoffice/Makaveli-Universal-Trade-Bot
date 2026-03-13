@@ -12,5 +12,14 @@ class User(db.Model, UserMixin):
     email = db.Column(db.String(150), unique=True, nullable=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 
+    # Broker settings
+    # comma-separated list of enabled brokers: e.g. "ALPACA"
+    enabled_brokers = db.Column(db.String(255), default="ALPACA")
+    
+    # Alpaca credentials (encrypted/hashed in production, here we use string for simplicity)
+    alpaca_key = db.Column(db.String(255), nullable=True)
+    alpaca_secret = db.Column(db.String(255), nullable=True)
+    alpaca_paper = db.Column(db.Boolean, default=True)
+
     def __repr__(self):
         return f'<User {self.username}>'

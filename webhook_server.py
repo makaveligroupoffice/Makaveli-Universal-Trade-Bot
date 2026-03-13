@@ -50,7 +50,7 @@ risk = RiskManager()
 scanner = Scanner()
 
 
-def _auth_ok(req) -> bool:
+def _get_authenticated_user(req):
     # 1. Check for valid JWT token in Authorization header
     auth_header = req.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
@@ -59,7 +59,7 @@ def _auth_ok(req) -> bool:
             data = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
             user = User.query.get(data['user_id'])
             if user:
-                return True
+                return user
         except:
             pass
 
@@ -71,13 +71,18 @@ def _auth_ok(req) -> bool:
     if (secret and secret == Config.WEBHOOK_SECRET) or (
         header_secret and header_secret == Config.WEBHOOK_SECRET
     ):
-        return True
+        # Associate with the first user in the database or a default user
+        return User.query.first()
 
     # 3. Check for Flask-Login session (for browser-based requests)
     if current_user.is_authenticated:
-        return True
+        return current_user
 
-    return False
+    return None
+
+
+def _auth_ok(req) -> bool:
+    return _get_authenticated_user(req) is not None
 
 
 @app.post("/register")
@@ -102,6 +107,43 @@ def register():
     db.session.commit()
 
     return jsonify({"ok": True, "message": "User registered successfully"}), 201
+
+
+@app.get("/user/broker_settings")
+@login_required
+def get_broker_settings():
+    return jsonify({
+        "ok": True,
+        "enabled_brokers": current_user.enabled_brokers.split(",") if current_user.enabled_brokers else [],
+        "alpaca": {
+            "key": current_user.alpaca_key,
+            "secret": "*******" if current_user.alpaca_secret else None,
+            "paper": current_user.alpaca_paper
+        }
+    })
+
+
+@app.post("/user/broker_settings")
+@login_required
+def update_broker_settings():
+    data = request.get_json(silent=True) or {}
+    
+    if "enabled_brokers" in data:
+        brokers = data.get("enabled_brokers")
+        if isinstance(brokers, list):
+            current_user.enabled_brokers = ",".join(brokers)
+    
+    if "alpaca" in data:
+        alp_data = data["alpaca"]
+        if "key" in alp_data:
+            current_user.alpaca_key = alp_data["key"]
+        if "secret" in alp_data:
+            current_user.alpaca_secret = alp_data["secret"]
+        if "paper" in alp_data:
+            current_user.alpaca_paper = bool(alp_data["paper"])
+            
+    db.session.commit()
+    return jsonify({"ok": True, "message": "Broker settings updated successfully"})
 
 
 @app.post("/login")
@@ -131,12 +173,22 @@ def logout():
 
 @app.post("/webhook")
 def webhook():
-    if not _auth_ok(request):
+    user = _get_authenticated_user(request)
+    if not user:
         log.warning("Unauthorized webhook request blocked")
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     data = request.get_json(silent=True) or {}
-    log.info(f"webhook received: {data}")
+    log.info(f"webhook received from user {user.username}: {data}")
+
+    # Initialize user-specific broker if applicable
+    active_broker = broker
+    if user.alpaca_key and user.alpaca_secret:
+        active_broker = AlpacaBroker(
+            key=user.alpaca_key, 
+            secret=user.alpaca_secret, 
+            paper=user.alpaca_paper
+        )
 
     action = (data.get("action") or "").lower()
     symbol = (data.get("symbol") or "").upper()
@@ -158,8 +210,8 @@ def webhook():
 
     if action == "status":
         try:
-            acct = broker.get_account()
-            positions = broker.get_open_positions()
+            acct = active_broker.get_account()
+            positions = active_broker.get_open_positions()
             summary = risk.get_daily_summary()
             
             equity = f"${float(acct.equity):,.2f}" if acct else "N/A"
@@ -202,7 +254,7 @@ def webhook():
             if intent:
                 pos_intent = PositionIntent(intent)
             
-            order = broker.submit_option_order(
+            order = active_broker.submit_option_order(
                 symbol=option_symbol or symbol,
                 qty=qty,
                 side=order_side,
@@ -232,7 +284,7 @@ def webhook():
         return jsonify({"ok": False, "error": "duplicate alert"}), 409
 
     # Market clock for risk checks
-    clock = broker.get_clock()
+    clock = active_broker.get_clock()
     current_hhmm = None
     if clock:
         current_hhmm = int(clock.timestamp.strftime("%H%M"))
@@ -240,7 +292,7 @@ def webhook():
     if not risk.can_trade(is_exit=(action == "sell"), current_hhmm=current_hhmm):
         return jsonify({"ok": False, "error": "risk rules blocked trade"}), 403
 
-    current_qty = broker.get_position_qty(symbol)
+    current_qty = active_broker.get_position_qty(symbol)
     log.info(f"📌 Position check | {symbol} currently_qty={current_qty}")
 
     if action == "sell" and current_qty <= 0:
@@ -249,7 +301,7 @@ def webhook():
     if action == "buy" and current_qty != 0:
         return jsonify({"ok": False, "error": f"Already holding {symbol}"}), 409
 
-    open_positions = broker.get_open_positions_count()
+    open_positions = active_broker.get_open_positions_count()
     if action == "buy" and open_positions >= Config.MAX_OPEN_POSITIONS:
         return jsonify(
             {"ok": False, "error": f"max open positions reached ({open_positions})"},
@@ -262,7 +314,7 @@ def webhook():
 
     limit_price = None
     if Config.USE_LIMIT_ORDERS or extended_hours:
-        latest_price = broker.get_latest_mid_price(symbol)
+        latest_price = active_broker.get_latest_mid_price(symbol)
         if latest_price:
             if action == "buy":
                 limit_price = latest_price * (1 + (Config.LIMIT_OFFSET_PCT / 100.0))
@@ -274,10 +326,10 @@ def webhook():
 
     try:
         if action == "buy":
-            order = broker.buy(symbol, qty, limit_price=limit_price, extended_hours=extended_hours)
+            order = active_broker.buy(symbol, qty, limit_price=limit_price, extended_hours=extended_hours)
         else: # action == "sell"
             # If we are closing a position, use sell_all to handle long/short
-            order = broker.sell_all(symbol, limit_price=limit_price, extended_hours=extended_hours)
+            order = active_broker.sell_all(symbol, limit_price=limit_price, extended_hours=extended_hours)
             qty = current_qty
         
         msg = f"Webhook trade executed: {action.upper()} {qty} {symbol}"

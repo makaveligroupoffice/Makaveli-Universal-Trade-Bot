@@ -10,11 +10,11 @@ from broker_base import BrokerBase
 
 
 class AlpacaBroker(BrokerBase):
-    def __init__(self):
+    def __init__(self, key=None, secret=None, paper=None):
         self.client = TradingClient(
-            Config.ALPACA_KEY,
-            Config.ALPACA_SECRET,
-            paper=Config.ALPACA_PAPER,
+            key or Config.ALPACA_KEY,
+            secret or Config.ALPACA_SECRET,
+            paper=paper if paper is not None else Config.ALPACA_PAPER,
         )
 
     def buy(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):

@@ -37,6 +37,7 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
 - **Distributed Auto-Updates**: If you share the code or run it on multiple machines, the bot can **automatically pull code updates from your GitHub repository** and apply them live via hot-reloading. This ensures all your instances are always running the latest evolved "DNA".
 - **User Authentication & Multi-User Support**: On new downloads, the bot now includes a **Login and Registration** system to protect each user's data and access. This includes JWT token authentication for APIs and Flask-Login for browser sessions.
 - **Multi-Account Log Centralization**: You can now link multiple bot instances to a single "Master" bot to collect and analyze paper trading logs in one place. This allows you to track the combined success rate across a network of different accounts and settings.
+- **Multi-Broker Account Integration**: Each registered user can now configure their own specific broker (Alpaca) and credentials (Key, Secret, Paper/Live) directly via the API. This enables a single bot instance to trade for multiple accounts simultaneously with isolated risk management and reporting.
 
 ## Project Structure
 

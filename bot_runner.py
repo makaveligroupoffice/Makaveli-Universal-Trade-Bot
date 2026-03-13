@@ -8,6 +8,8 @@ import sys
 import time
 from datetime import datetime
 
+from flask import Flask
+
 from bot_state import BotStateStore
 from broker_alpaca import AlpacaBroker
 from config import Config
@@ -21,6 +23,7 @@ from trade_journal import TradeJournal
 from notifications import send_notification
 from ai_engine import AIEngine
 from updater import AutoUpdater
+from models import db, User
 
 os.makedirs(Config.LOG_DIR, exist_ok=True)
 
@@ -35,20 +38,44 @@ logging.basicConfig(
 
 log = logging.getLogger("autobot")
 
+# We need a dummy flask app context for DB access
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = Config.SQLALCHEMY_DATABASE_URI
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
+
 
 class AutoTrader:
-    def __init__(self):
+    def __init__(self, user: User | None = None):
+        self.user = user
         self._validate_launch_mode()
 
-        self.broker = AlpacaBroker()
-        self.risk = RiskManager()
+        if user and user.alpaca_key and user.alpaca_secret:
+            self.broker = AlpacaBroker(
+                key=user.alpaca_key,
+                secret=user.alpaca_secret,
+                paper=user.alpaca_paper
+            )
+            user_id = user.id
+        else:
+            self.broker = AlpacaBroker()
+            user_id = None
+
+        self.risk = RiskManager(user_id=user_id)
         self.scanner = Scanner()
         self.strategy = Strategy()
         self.data = MarketDataClient()
-        self.state_store = BotStateStore(Config.BOT_STATE_FILE)
-        self.trade_journal = TradeJournal(Config.TRADE_JOURNAL_FILE)
-        self.analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
-        self.learning = LearningEngine(Config.TRADE_JOURNAL_FILE)
+        
+        state_path = Config.BOT_STATE_FILE
+        journal_path = Config.TRADE_JOURNAL_FILE
+        if user_id:
+            state_path = os.path.join(Config.LOG_DIR, f"bot_state_user_{user_id}.json")
+            journal_path = os.path.join(Config.LOG_DIR, f"trade_journal_user_{user_id}.jsonl")
+
+        self.state_store = BotStateStore(state_path)
+        self.trade_journal = TradeJournal(journal_path)
+        self.analyzer = PerformanceAnalyzer(journal_path)
+        self.learning = LearningEngine(journal_path)
         self.ai = AIEngine()
         self.updater = AutoUpdater()
         self.state = self.state_store.load()
@@ -57,9 +84,9 @@ class AutoTrader:
         self.summary_date = datetime.now().strftime("%Y-%m-%d")
         self.daily_summary = self._default_daily_summary()
 
-    @staticmethod
-    def _validate_launch_mode():
-        if not Config.ALPACA_PAPER:
+    def _validate_launch_mode(self):
+        paper = self.user.alpaca_paper if self.user else Config.ALPACA_PAPER
+        if not paper:
             required_ack = "I_UNDERSTAND_THIS_IS_REAL_MONEY"
             if Config.LIVE_TRADING_ACKNOWLEDGED != required_ack:
                 raise RuntimeError(
@@ -724,26 +751,20 @@ class AutoTrader:
             except Exception as e:
                 self._record_failure(f"Exit failed for {symbol}", e)
 
-    def run(self):
-        msg = "AutoTrader started"
-        log.info(msg)
-        send_notification(msg)
-        log.info(
-            f"Mode={'PAPER' if Config.ALPACA_PAPER else 'LIVE'} | "
-            f"new_entries_enabled={Config.ENABLE_NEW_ENTRIES} | "
-            f"max_spread_pct={Config.MAX_SPREAD_PCT} | "
-            f"order_timeout_seconds={Config.ORDER_TIMEOUT_SECONDS} | "
-            f"max_consecutive_failures={Config.MAX_CONSECUTIVE_FAILURES} | "
-            f"auto_shutdown_after_close={Config.AUTO_SHUTDOWN_AFTER_CLOSE}"
-        )
-        self._log_startup_reconciliation()
-
-        # Send a morning watchlist report on startup
-        try:
-            watchlist = self.scanner.get_recommendation_report()
-            send_notification(watchlist, title="Morning Watchlist")
-        except Exception as e:
-            log.warning(f"Failed to generate morning watchlist: {e}")
+    def run(self, single_cycle: bool = False):
+        if not single_cycle:
+            msg = f"AutoTrader started for user: {self.user.username if self.user else 'DEFAULT'}"
+            log.info(msg)
+            send_notification(msg)
+            log.info(
+                f"Mode={'PAPER' if (self.user.alpaca_paper if self.user else Config.ALPACA_PAPER) else 'LIVE'} | "
+                f"new_entries_enabled={Config.ENABLE_NEW_ENTRIES} | "
+                f"max_spread_pct={Config.MAX_SPREAD_PCT} | "
+                f"order_timeout_seconds={Config.ORDER_TIMEOUT_SECONDS} | "
+                f"max_consecutive_failures={Config.MAX_CONSECUTIVE_FAILURES} | "
+                f"auto_shutdown_after_close={Config.AUTO_SHUTDOWN_AFTER_CLOSE}"
+            )
+            self._log_startup_reconciliation()
 
         import importlib
         import strategy
@@ -754,7 +775,7 @@ class AutoTrader:
         while True:
             try:
                 # Periodic Auto-Update check (every 1 hour)
-                if Config.ENABLE_AUTO_UPDATE and time.time() - last_update_check > 3600:
+                if Config.ENABLE_AUTO_UPDATE and time.time() - last_update_check > 3600 and not single_cycle:
                     try:
                         if self.updater.check_for_updates():
                             log.info("Repository updated via git. Triggering reloads.")
@@ -769,7 +790,8 @@ class AutoTrader:
                     importlib.reload(strategy)
                     self.strategy = strategy.Strategy() # Re-instantiate if needed
                     last_strategy_mtime = current_strategy_mtime
-                    send_notification("New trading strategy detected and applied live!", title="Strategy Updated")
+                    if not single_cycle:
+                        send_notification("New trading strategy detected and applied live!", title="Strategy Updated")
 
                 self.sync_state()
 
@@ -783,10 +805,13 @@ class AutoTrader:
                 self.try_entry(current_hhmm=current_hhmm)
                 self._reset_failures()
 
+                if single_cycle:
+                    break
+
                 # Periodic Log Submission to Central Server
                 if Config.ENABLE_LOG_SUBMISSION and time.time() - last_log_submission > Config.SUBMIT_LOGS_EVERY_SECONDS:
                     log.info("Attempting to submit paper trading logs to central server...")
-                    bot_id = os.getenv("USER", "bot_user")
+                    bot_id = self.user.username if self.user else os.getenv("USER", "bot_user")
                     if self.analyzer.submit_logs_to_central_server(bot_id):
                         last_log_submission = time.time()
                     else:
@@ -797,7 +822,7 @@ class AutoTrader:
                     summary = self.risk.get_daily_summary()
                     pnl = summary.get("daily_pnl", 0.0)
                     trades = summary.get("trades_count", 0)
-                    msg = f"Trading day complete. Final Daily PnL: ${pnl:.2f} | Trades: {trades}. Shutting down."
+                    msg = f"Trading day complete for {bot_id}. Final Daily PnL: ${pnl:.2f} | Trades: {trades}. Shutting down."
                     log.info(msg)
                     send_notification(msg, title="Bot Shutdown")
 
@@ -823,8 +848,52 @@ class AutoTrader:
             except Exception as e:
                 self._record_failure("Main loop error", e)
 
+            if single_cycle:
+                break
             time.sleep(20)
 
 
 if __name__ == "__main__":
-    AutoTrader().run()
+    import os
+    
+    # Check for updates and update codebase if needed
+    updater = AutoUpdater()
+    if Config.ENABLE_AUTO_UPDATE:
+        try:
+            updater.check_for_updates()
+        except Exception as e:
+            log.error(f"Startup auto-update failed: {e}")
+
+    last_update_check = time.time()
+    
+    while True:
+        with app.app_context():
+            users = User.query.all()
+            if not users:
+                # If no users yet, run with default credentials from .env
+                log.info("No users found in database. Running with default credentials.")
+                AutoTrader().run() # This might need a non-infinite run or we handle it differently
+                # For now, let's break or sleep to avoid infinite loop of no-users
+                time.sleep(60)
+                continue
+
+            for user in users:
+                try:
+                    log.info(f"Processing trading cycle for user: {user.username}")
+                    trader = AutoTrader(user=user)
+                    
+                    # Run one cycle for this user
+                    trader.run(single_cycle=True)
+                    
+                except Exception as e:
+                    log.error(f"Error processing user {user.username}: {e}")
+
+        # Periodic Auto-Update check (every 1 hour)
+        if Config.ENABLE_AUTO_UPDATE and time.time() - last_update_check > 3600:
+            try:
+                updater.check_for_updates()
+                last_update_check = time.time()
+            except Exception as e:
+                log.error(f"Auto-update failed: {e}")
+
+        time.sleep(20)

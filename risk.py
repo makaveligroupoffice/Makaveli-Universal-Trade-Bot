@@ -9,8 +9,13 @@ from config import Config
 
 
 class RiskManager:
-    def __init__(self):
-        self.state_file = Config.RISK_STATE_FILE
+    def __init__(self, user_id: int | None = None):
+        self.user_id = user_id
+        if user_id:
+            self.state_file = os.path.join(Config.LOG_DIR, f"risk_state_user_{user_id}.json")
+        else:
+            self.state_file = Config.RISK_STATE_FILE
+            
         os.makedirs(Config.LOG_DIR, exist_ok=True)
         self.state = self._load_state()
         self._roll_day_if_needed()
