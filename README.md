@@ -34,6 +34,7 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
     - Trailing Stop-Loss and Take-Profit logic.
     - **Hot-Reloading**: Update your code while the bot is running—it will pick up changes instantly without stopping.
 - **Manual Trade Monitoring**: The bot can adopt and manage trades you open manually on the Alpaca dashboard, applying its automated trailing stops to your own picks.
+- **Distributed Auto-Updates**: If you share the code or run it on multiple machines, the bot can **automatically pull code updates from your GitHub repository** and apply them live via hot-reloading. This ensures all your instances are always running the latest evolved "DNA".
 
 ## Project Structure
 

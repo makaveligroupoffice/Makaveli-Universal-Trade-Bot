@@ -96,6 +96,11 @@ class Config:
     ENABLE_AI_EVOLUTION: bool = os.getenv("ENABLE_AI_EVOLUTION", "true").lower() == "true"
     ENABLE_AI_TRADE_FILTER: bool = os.getenv("ENABLE_AI_TRADE_FILTER", "false").lower() == "true"
 
+    # Distributed Auto-Updates
+    ENABLE_AUTO_UPDATE: bool = os.getenv("ENABLE_AUTO_UPDATE", "true").lower() == "true"
+    AUTO_UPDATE_BRANCH: str = os.getenv("AUTO_UPDATE_BRANCH", "main")
+    AUTO_UPDATE_REMOTE: str = os.getenv("AUTO_UPDATE_REMOTE", "origin")
+
     # Notifications (Discord Webhook or Pushover)
     DISCORD_WEBHOOK_URL: str | None = os.getenv("DISCORD_WEBHOOK_URL")
     PUSHOVER_USER_KEY: str | None = os.getenv("PUSHOVER_USER_KEY")

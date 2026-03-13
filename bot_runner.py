@@ -20,6 +20,7 @@ from learning import LearningEngine
 from trade_journal import TradeJournal
 from notifications import send_notification
 from ai_engine import AIEngine
+from updater import AutoUpdater
 
 os.makedirs(Config.LOG_DIR, exist_ok=True)
 
@@ -49,6 +50,7 @@ class AutoTrader:
         self.analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
         self.learning = LearningEngine(Config.TRADE_JOURNAL_FILE)
         self.ai = AIEngine()
+        self.updater = AutoUpdater()
         self.state = self.state_store.load()
         self.consecutive_failures = 0
         self.safe_mode = False
@@ -746,9 +748,19 @@ class AutoTrader:
         import importlib
         import strategy
         last_strategy_mtime = os.path.getmtime("strategy.py")
+        last_update_check = 0
 
         while True:
             try:
+                # Periodic Auto-Update check (every 1 hour)
+                if Config.ENABLE_AUTO_UPDATE and time.time() - last_update_check > 3600:
+                    try:
+                        if self.updater.check_for_updates():
+                            log.info("Repository updated via git. Triggering reloads.")
+                        last_update_check = time.time()
+                    except Exception as e:
+                        log.error(f"Auto-update failed: {e}")
+
                 # Hot-reload logic
                 current_strategy_mtime = os.path.getmtime("strategy.py")
                 if current_strategy_mtime > last_strategy_mtime:
