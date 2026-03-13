@@ -4,7 +4,7 @@ from tradingview_screener import Query, Column
 
 from config import Config
 from market_data import MarketDataClient
-from universe import DEFAULT_UNIVERSE
+from universe import DEFAULT_UNIVERSE, BOND_UNIVERSE
 
 log = logging.getLogger("tradebot")
 
@@ -12,7 +12,7 @@ log = logging.getLogger("tradebot")
 class Scanner:
     def __init__(self):
         self.data = MarketDataClient()
-        self.universe = DEFAULT_UNIVERSE
+        self.universe = DEFAULT_UNIVERSE + BOND_UNIVERSE
         self.min_price = 1.00
         self.max_price = 30.00
         self.min_total_volume = 100_000
@@ -26,6 +26,8 @@ class Scanner:
         # Decide the universe to scan
         if Config.USE_TV_SCREENER:
             universe = self.get_tv_candidates()
+            # Always include bond universe for diversity if scanning custom
+            universe = list(set(universe + BOND_UNIVERSE))
         else:
             universe = self.universe
         
@@ -83,7 +85,11 @@ class Scanner:
             if first_close <= 0:
                 return None
 
-            if not (self.min_price <= last_close <= self.max_price):
+            # Loosen price filters for Bonds (they can be > $30)
+            is_bond = symbol in BOND_UNIVERSE
+            effective_max_price = 250.00 if is_bond else self.max_price
+            
+            if not (self.min_price <= last_close <= effective_max_price):
                 return None
 
             if total_volume < self.min_total_volume:
