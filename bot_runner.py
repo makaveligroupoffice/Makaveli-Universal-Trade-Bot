@@ -19,6 +19,7 @@ from performance import PerformanceAnalyzer
 from learning import LearningEngine
 from trade_journal import TradeJournal
 from notifications import send_notification
+from ai_engine import AIEngine
 
 os.makedirs(Config.LOG_DIR, exist_ok=True)
 
@@ -47,6 +48,7 @@ class AutoTrader:
         self.trade_journal = TradeJournal(Config.TRADE_JOURNAL_FILE)
         self.analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
         self.learning = LearningEngine(Config.TRADE_JOURNAL_FILE)
+        self.ai = AIEngine()
         self.state = self.state_store.load()
         self.consecutive_failures = 0
         self.safe_mode = False
@@ -545,9 +547,20 @@ class AutoTrader:
             
             # News Awareness Filter
             if Config.ENABLE_NEWS_FILTER:
-                if not self.strategy.is_news_safe(symbol, self.data):
-                    log.info(f"Skipping {symbol}: high-impact news or excessive volatility detected")
+                news = self.data.get_news(symbol, days=1)
+                # 1. Rule-based filter
+                if not self.strategy.is_news_safe(symbol, self.data, news_list=news):
+                    log.info(f"Skipping {symbol}: high-impact news or excessive volatility detected (Rule-based)")
                     continue
+                
+                # 2. AI-based Sentiment Filter
+                if Config.AI_PROVIDER and Config.OPENAI_API_KEY:
+                    headlines = [n.headline for n in news]
+                    sentiment_score = self.ai.analyze_trade_sentiment(symbol, headlines)
+                    log.info(f"AI Sentiment for {symbol}: {sentiment_score:.2f}")
+                    if sentiment_score < -0.3: # Bearish threshold
+                        log.info(f"Skipping {symbol}: AI detected bearish sentiment ({sentiment_score:.2f})")
+                        continue
 
             should_buy, buy_reason, buy_strength = self.strategy.should_buy(bars, self.dynamic_config)
             should_short, short_reason, short_strength = self.strategy.should_short(bars, self.dynamic_config)
@@ -566,6 +579,15 @@ class AutoTrader:
             
             if not action:
                 continue
+
+            # 3. AI Signal Verification (Final Check)
+            if Config.ENABLE_AI_TRADE_FILTER:
+                # Prepare indicators for AI analysis
+                df = self.strategy._calculate_indicators(bars)
+                last_indicators = df.iloc[-1].to_dict() if df is not None else {}
+                if not self.ai.verify_trade_signal(symbol, reason, last_indicators):
+                    log.info(f"Skipping {symbol}: AI rejected the {reason} signal")
+                    continue
 
             latest_price = self.data.get_latest_mid_price(symbol)
             if not latest_price or latest_price <= 0:

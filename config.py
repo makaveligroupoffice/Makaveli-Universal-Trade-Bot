@@ -89,6 +89,13 @@ class Config:
     PORT: int = int(os.getenv("PORT", "5000"))
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
 
+    # AI Configuration
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "OPENAI") # OPENAI, ANTHROPIC, etc.
+    OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+    ENABLE_AI_EVOLUTION: bool = os.getenv("ENABLE_AI_EVOLUTION", "true").lower() == "true"
+    ENABLE_AI_TRADE_FILTER: bool = os.getenv("ENABLE_AI_TRADE_FILTER", "false").lower() == "true"
+
     # Notifications (Discord Webhook or Pushover)
     DISCORD_WEBHOOK_URL: str | None = os.getenv("DISCORD_WEBHOOK_URL")
     PUSHOVER_USER_KEY: str | None = os.getenv("PUSHOVER_USER_KEY")

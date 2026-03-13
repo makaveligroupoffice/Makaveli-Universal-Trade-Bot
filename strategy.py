@@ -125,11 +125,11 @@ class Strategy:
         return False, "failed all entry tiers", 0.0
 
     @staticmethod
-    def is_news_safe(symbol: str, market_data_client) -> bool:
+    def is_news_safe(symbol: str, market_data_client, news_list: list | None = None) -> bool:
         """
         Avoid trading if there's high-impact news or too many recent news items (excessive volatility).
         """
-        news = market_data_client.get_news(symbol, days=1)
+        news = news_list if news_list is not None else market_data_client.get_news(symbol, days=1)
         # Check for specific negative keywords in headlines
         negative_keywords = ["lawsuit", "investigation", "bankruptcy", "fraud", "hacked"]
         

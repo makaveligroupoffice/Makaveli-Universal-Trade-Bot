@@ -7,6 +7,7 @@ from notifications import send_notification
 from market_data import MarketDataClient
 from strategy import Strategy
 from universe import DEFAULT_UNIVERSE
+from ai_engine import AIEngine
 
 log = logging.getLogger("autobot")
 
@@ -86,6 +87,7 @@ class LearningEngine:
         self.journal_path = journal_path
         self.model_path = model_path
         self.state = self._load_model()
+        self.ai = AIEngine()
 
     def _load_model(self):
         if os.path.exists(self.model_path):
@@ -179,45 +181,49 @@ class LearningEngine:
 
     def evolve_code(self, analysis_report: str):
         """
-        Suggests or applies code changes to strategy.py based on analysis.
+        Uses AI to rewrite strategy code based on performance analysis.
         This uses an autonomous self-correction pattern.
         """
-        log.info(f"Learning Engine evolving strategy logic based on report: {analysis_report}")
-        
-        # Self-correction: if we have LOW_WIN_RATE, we increase the confirmation requirements in the code
-        if "WIDEN_STOP_LOSS" in analysis_report or "REDUCE_RISK_PER_TRADE" in analysis_report:
-            log.info("Evolving code: Tightening 'Sniper' confirmation thresholds via code modification.")
-            
-            try:
-                with open("strategy.py", "r") as f:
-                    content = f.read()
-                
-                # Example: Increase close_relative_pos requirement from 0.7 to 0.75
-                new_content = content.replace("close_relative_pos >= 0.7", "close_relative_pos >= 0.75")
-                # Example: Increase RVOL requirement base from 1.8 to 2.0 if win rate is very low
-                new_content = new_content.replace("min_rvol, 1.8", "min_rvol, 2.0")
-                
-                if new_content != content:
-                    with open("strategy.py", "w") as f:
-                        f.write(new_content)
-                    log.info("Strategy code evolved and saved. Hot-reload will trigger.")
-                    
-                    # Automatically push the evolution to GitHub
-                    try:
-                        import subprocess
-                        subprocess.run(["git", "add", "strategy.py"], check=True)
-                        commit_msg = f"chore(evolution): autonomously improve strategy logic based on performance: {analysis_report}"
-                        # Adding co-author trailer as per system rules
-                        commit_msg += "\n\nCo-authored-by: Junie <junie@jetbrains.com>"
-                        subprocess.run(["git", "commit", "-m", commit_msg], check=True)
-                        subprocess.run(["git", "push", "origin", "main"], check=True)
-                        log.info("Autonomous code evolution pushed to GitHub.")
-                    except Exception as ge:
-                        log.error(f"Failed to push autonomous evolution to GitHub: {ge}")
+        if not Config.ENABLE_AI_EVOLUTION:
+            log.info("AI evolution disabled. Skipping code evolution.")
+            return
 
-                    send_notification("Bot has autonomously improved its own code and pushed the update to GitHub.", title="Autonomous Evolution")
-            except Exception as e:
-                log.error(f"Autonomous evolution failed: {e}")
+        log.info(f"Learning Engine evolving strategy logic via AI based on report: {analysis_report}")
+        
+        try:
+            with open("strategy.py", "r") as f:
+                current_code = f.read()
+            
+            # Use AI to generate the evolved code
+            new_content = self.ai.generate_code_evolution(current_code, analysis_report)
+            
+            if new_content and new_content != current_code:
+                # Basic sanity check: ensure 'class Strategy' is still present
+                if "class Strategy" not in new_content:
+                    log.error("AI-generated code missing 'Strategy' class. Rejecting.")
+                    return
+
+                with open("strategy.py", "w") as f:
+                    f.write(new_content)
+                log.info("Strategy code autonomously evolved by AI. Hot-reload will trigger.")
+                
+                # Automatically push the evolution to GitHub
+                try:
+                    import subprocess
+                    subprocess.run(["git", "add", "strategy.py"], check=True)
+                    commit_msg = f"chore(evolution): AI autonomously improved strategy logic: {analysis_report}"
+                    commit_msg += "\n\nCo-authored-by: Junie <junie@jetbrains.com>"
+                    subprocess.run(["git", "commit", "-m", commit_msg], check=True)
+                    subprocess.run(["git", "push", "origin", "main"], check=True)
+                    log.info("AI-driven code evolution pushed to GitHub.")
+                except Exception as ge:
+                    log.error(f"Failed to push AI evolution to GitHub: {ge}")
+
+                send_notification("Bot has autonomously improved its own code using AI and pushed the update to GitHub.", title="AI Evolution")
+            else:
+                log.info("AI suggested no changes or failed to generate code.")
+        except Exception as e:
+            log.error(f"AI evolution process failed: {e}")
 
     def get_dynamic_config(self):
         return {
