@@ -22,6 +22,7 @@ from learning import LearningEngine
 from trade_journal import TradeJournal
 from notifications import send_notification
 from ai_engine import AIEngine
+from research import ResearchEngine
 from updater import AutoUpdater
 from models import db, User
 
@@ -77,6 +78,7 @@ class AutoTrader:
         self.analyzer = PerformanceAnalyzer(journal_path)
         self.learning = LearningEngine(journal_path)
         self.ai = AIEngine()
+        self.researcher = ResearchEngine()
         self.updater = AutoUpdater()
         self.state = self.state_store.load()
         self.consecutive_failures = 0
@@ -136,9 +138,20 @@ class AutoTrader:
 
     def _save_state(self):
         # Periodically evolve and adjust dynamic config
-        if int(time.time()) % 3600 < 60: # once an hour roughly
+        now = time.time()
+        if int(now) % 3600 < 60: # once an hour roughly
              self.learning.evolve()
              self.state["dynamic_config"] = self.learning.get_dynamic_config()
+             
+             # Also perform internet research if market is closed and it's time
+             if not self._market_is_open() and Config.ENABLE_INTERNET_RESEARCH:
+                 last_research = self.state.get("last_internet_research", 0)
+                 if now - last_research > Config.RESEARCH_INTERVAL_SECONDS:
+                     summary = self.researcher.perform_internet_research()
+                     if summary:
+                         self.researcher.apply_research_to_strategy(summary)
+                         self.state["last_internet_research"] = now
+
         self.state_store.save(self.state)
 
     def _clear_pending_order(self, order_id: str):

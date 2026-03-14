@@ -53,6 +53,8 @@ class Config:
 
     # Strategy controls
     ENABLE_EXTENDED_HOURS: bool = os.getenv("ENABLE_EXTENDED_HOURS", "false").lower() == "true"
+    ENABLE_INTERNET_RESEARCH: bool = os.getenv("ENABLE_INTERNET_RESEARCH", "true").lower() == "true"
+    RESEARCH_INTERVAL_SECONDS: int = int(os.getenv("RESEARCH_INTERVAL_SECONDS", "86400")) # 24 hours
     ENABLE_NEW_ENTRIES: bool = os.getenv("ENABLE_NEW_ENTRIES", "true").lower() == "true"
     USE_LIMIT_ORDERS: bool = os.getenv("USE_LIMIT_ORDERS", "false").lower() == "true"
     LIMIT_OFFSET_PCT: float = float(os.getenv("LIMIT_OFFSET_PCT", "0.05"))

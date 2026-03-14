@@ -28,16 +28,49 @@ class AIEngine:
         """
         Uses AI to rewrite strategy code based on performance analysis.
         """
+        return self._ai_code_generation(current_code, f"Performance Report:\n{performance_report}")
+
+    def summarize_research(self, prompt: str) -> str:
+        """
+        Uses AI to research and summarize information.
+        """
+        if not self.client:
+            return ""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a professional research analyst specializing in financial markets."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=2000,
+                temperature=0.3
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            log.error(f"AI research summary failed: {e}")
+            return ""
+
+    def evolve_code_from_research(self, current_code: str, research_summary: str) -> str:
+        """
+        Uses AI to rewrite strategy code based on internet research findings.
+        """
+        return self._ai_code_generation(current_code, f"Internet Research Summary:\n{research_summary}")
+
+    def _ai_code_generation(self, current_code: str, context: str) -> str:
+        """
+        Generic helper for AI code generation.
+        """
         if not self.client:
             log.warning("AI client not available. Skipping AI code evolution.")
             return current_code
 
         prompt = f"""
 You are an expert algorithmic trading developer. 
-Your task is to analyze the performance of a trading bot and improve its strategy code in 'strategy.py'.
+Your task is to analyze external research or performance data and improve a trading strategy code in 'strategy.py'.
 
-Current Performance Report:
-{performance_report}
+{context}
 
 Current 'strategy.py' code:
 ```python
@@ -45,8 +78,8 @@ Current 'strategy.py' code:
 ```
 
 Instructions:
-1. Identify logic weaknesses contributing to the performance issues.
-2. Modify technical indicator thresholds, confirmation rules, or exit logic to improve the Win Rate and Profit Factor.
+1. Identify logic weaknesses or opportunities for improvement.
+2. Modify technical indicator thresholds, confirmation rules, or exit logic.
 3. Preserve all class and method signatures.
 4. Respond ONLY with the complete, updated Python code for the 'Strategy' class. 
 5. Do not include any explanations or markdown formatting outside the code block.
@@ -72,7 +105,7 @@ Instructions:
                 
             return ai_code
         except Exception as e:
-            log.error(f"AI code evolution failed: {e}")
+            log.error(f"AI code generation failed: {e}")
             return current_code
 
     def analyze_trade_sentiment(self, symbol: str, news_headlines: list) -> float:
