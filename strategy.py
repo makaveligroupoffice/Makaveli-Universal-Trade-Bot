@@ -90,36 +90,43 @@ class Strategy:
         # TIER 1: SNIPER (Standard High Conviction)
         hourly_trend_bullish = last['close'] > last['sma_hourly'] if not pd.isna(last['sma_hourly']) else True
         
+        # Expert Tuning: Tighten Sniper to reach 75%+ success rate
+        sniper_stack = last['close'] > last['sma10'] > last['sma20']
+        candle_quality = last_candle_green and close_relative_pos >= 0.75
+        
         # 1. Trend Following Strategy (Sniper Logic)
         if "TREND" in active:
-            if long_term_bullish and hourly_trend_bullish and bullish_trend and last_candle_green and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
-                return True, f"TREND/SNIPER: trend + high RVOL ({last['rvol']:.2f}) breakout", 1.0
+            if long_term_bullish and hourly_trend_bullish and sniper_stack and candle_quality and volume_spike and not volatility_excessive:
+                return True, f"TREND/SNIPER: perfect stack + quality candle + high RVOL ({last['rvol']:.2f})", 1.0
 
         # 2. RSI Trading Strategy (Mean Reversion / Overbought-Oversold)
         if "RSI" in active:
-            if last['rsi14'] < 30 and last['close'] > prev['close']:
-                return True, f"RSI: oversold bounce (RSI: {last['rsi14']:.2f})", 0.7
+            # Expert Tuning: Require candle confirmation for mean reversion
+            if last['rsi14'] < 25 and last_candle_green and close_relative_pos > 0.5:
+                return True, f"RSI: deep oversold bounce (RSI: {last['rsi14']:.2f})", 0.7
 
         # 3. Bollinger Bands Strategy (Mean Reversion)
         if "BOLLINGER" in active:
-            if last['close'] < last['bb_lower'] and last['close'] > prev['close']:
-                 return True, "BOLLINGER: lower band bounce", 0.7
+            if last['close'] < last['bb_lower'] and last_candle_green:
+                 return True, "BOLLINGER: lower band reversal", 0.7
 
         # 4. MACD Divergence Strategy (Momentum Reversal)
         if "MACD" in active:
-            if last['macd_hist'] > 0 and prev['macd_hist'] <= 0:
+            if last['macd_hist'] > 0 and prev['macd_hist'] <= 0 and last_candle_green:
                 return True, f"MACD: bullish crossover (hist: {last['macd_hist']:.4f})", 0.7
 
         # 5. Breakout Trading Strategy (Range Breakout)
         if "BREAKOUT" in active:
             highest_20 = df['high'].rolling(20).max().iloc[-2]
-            if last['close'] > highest_20 and volume_spike:
-                return True, f"BREAKOUT: new 20-bar high with volume (RVOL: {last['rvol']:.2f})", 0.8
+            # Expert Tuning: Require close above high + volume
+            if last['close'] > highest_20 and volume_spike and last_candle_green:
+                return True, f"BREAKOUT: clear range breakout with volume (RVOL: {last['rvol']:.2f})", 0.8
 
         # TIER 2: AGGRESSIVE (Taking chances for growth)
         if "AGGRESSIVE" in active:
+            # Expert Tuning: Allow slightly looser entries for growth but keep RVOL high
             aggressive_trend = last['close'] > last['sma10'] and last['sma10'] > last['sma20']
-            if aggressive_trend and last_candle_green and close_relative_pos >= 0.5 and volume_spike and not volatility_excessive:
+            if aggressive_trend and last_candle_green and close_relative_pos >= 0.6 and last['rvol'] > 1.4 and not volatility_excessive:
                 return True, f"AGGRESSIVE: momentum play (RVOL: {last['rvol']:.2f})", 0.6
 
         return False, "failed all entry tiers", 0.0
@@ -255,9 +262,9 @@ class Strategy:
         # --- Momentum rollover (The "Scalp" exit) ---
         # Skip this aggressive exit for manual trades or VERY strong "Hold" trends
         if not is_manual and not is_strong_trend:
-            # Re-enabled "pennies" logic: lock in small profits (0.25%+) to keep cash flow constant
-            # unless we're in a clear runner.
-            min_scalp_profit = float(os.getenv("SCALP_PROFIT_FLOOR", "0.25")) / 100.0
+            # Expert Tuning: Tighten scalp profit floor to 0.15% for constant cash flow
+            # but require 4 bars of reversal instead of 3 to avoid getting stopped out by noise.
+            min_scalp_profit = float(os.getenv("SCALP_PROFIT_FLOOR", "0.15")) / 100.0
             
             is_profitable = False
             if side == "buy":
@@ -265,12 +272,12 @@ class Strategy:
             else:
                 is_profitable = (current_price < entry_price * (1 - min_scalp_profit))
 
-            if is_profitable and len(bars) >= 3:
-                closes = [float(bar.close) for bar in bars[-3:]]
-                if side == "buy" and closes[-1] < closes[-2] < closes[-3]:
-                    return True, f"steady cash flow scalp: momentum rollover (+{((current_price/entry_price)-1)*100:.2f}%)"
-                if side == "short" and closes[-1] > closes[-2] > closes[-3]:
-                    return True, f"steady cash flow short scalp: momentum rollover (+{((entry_price/current_price)-1)*100:.2f}%)"
+            if is_profitable and len(bars) >= 4:
+                closes = [float(bar.close) for bar in bars[-4:]]
+                if side == "buy" and closes[-1] < closes[-2] < closes[-3] < closes[-4]:
+                    return True, f"steady cash flow scalp: 4-bar momentum rollover (+{((current_price/entry_price)-1)*100:.2f}%)"
+                if side == "short" and closes[-1] > closes[-2] > closes[-3] > closes[-4]:
+                    return True, f"steady cash flow short scalp: 4-bar momentum rollover (+{((entry_price/current_price)-1)*100:.2f}%)"
 
         now_hhmm = int(datetime.now().strftime("%H%M"))
         if now_hhmm >= int(Config.ALLOWED_END_HHMM):
