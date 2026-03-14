@@ -20,6 +20,24 @@ class BotDisplay:
         self.root.attributes("-alpha", 0.9)
         self.root.configure(bg="black")
 
+        # MacOS specific: Make visible on all Spaces (home screens)
+        # We use a trick for macOS to make the window a 'floating' utility window 
+        # which usually stays on all desktops.
+        try:
+            # NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
+            # We can use tcl/tk to set the collection behavior if available, 
+            # but more reliably, setting the type to 'utility' or similar.
+            self.root.tk.call('tk', '::tk::mac::useCustomAppearance', '1')
+            self.root.attributes("-type", "panel")
+        except:
+            pass
+        
+        # Additionally, for macOS, we can set the collection behavior via Tcl
+        try:
+            self.root.tk.call('::tk::mac::setCollectionBehavior', self.root.winfo_id(), 1)
+        except:
+            pass
+
         # Window size and position
         self.width = 240
         self.height = 300
@@ -80,6 +98,8 @@ class BotDisplay:
         deltay = event.y - self.y
         x = self.root.winfo_x() + deltax
         y = self.root.winfo_y() + deltay
+        # Ensure it doesn't get lost off-screen (basic check)
+        # MacOS screen sizes can vary, but we want it to be movable anywhere
         self.root.geometry(f"+{x}+{y}")
 
     def animate(self):
