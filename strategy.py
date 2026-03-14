@@ -91,13 +91,17 @@ class Strategy:
         hourly_trend_bullish = last['close'] > last['sma_hourly'] if not pd.isna(last['sma_hourly']) else True
         
         # Expert Tuning: Tighten Sniper to reach 75%+ success rate
+        # 10x Growth Goal: Prioritize high-conviction momentum stacks
         sniper_stack = last['close'] > last['sma10'] > last['sma20']
-        candle_quality = last_candle_green and close_relative_pos >= 0.75
+        if 'sma50' in last and not pd.isna(last['sma50']):
+            sniper_stack = last['close'] > last['sma10'] > last['sma20'] > last['sma50']
+
+        candle_quality = last_candle_green and close_relative_pos >= 0.85
         
         # 1. Trend Following Strategy (Sniper Logic)
         if "TREND" in active:
-            if long_term_bullish and hourly_trend_bullish and sniper_stack and candle_quality and volume_spike and not volatility_excessive:
-                return True, f"TREND/SNIPER: perfect stack + quality candle + high RVOL ({last['rvol']:.2f})", 1.0
+            if long_term_bullish and hourly_trend_bullish and sniper_stack and candle_quality and last['rvol'] > 2.2 and not volatility_excessive:
+                return True, f"TREND/SNIPER: perfect stack + top-tier candle + extreme RVOL ({last['rvol']:.2f})", 1.0
 
         # 2. RSI Trading Strategy (Mean Reversion / Overbought-Oversold)
         if "RSI" in active:
@@ -125,8 +129,9 @@ class Strategy:
         # TIER 2: AGGRESSIVE (Taking chances for growth)
         if "AGGRESSIVE" in active:
             # Expert Tuning: Allow slightly looser entries for growth but keep RVOL high
+            # Targeting 10x growth via volume-backed momentum
             aggressive_trend = last['close'] > last['sma10'] and last['sma10'] > last['sma20']
-            if aggressive_trend and last_candle_green and close_relative_pos >= 0.6 and last['rvol'] > 1.4 and not volatility_excessive:
+            if aggressive_trend and last_candle_green and close_relative_pos >= 0.7 and last['rvol'] > 1.8 and not volatility_excessive:
                 return True, f"AGGRESSIVE: momentum play (RVOL: {last['rvol']:.2f})", 0.6
 
         return False, "failed all entry tiers", 0.0
@@ -175,8 +180,12 @@ class Strategy:
 
         # 1. Bearish Trend Following (Sniper)
         if "TREND" in active:
-            if long_term_bearish and bearish_trend and last_candle_red and close_relative_pos >= 0.7 and volume_spike and not volatility_excessive:
-                return True, f"SNIPER SHORT: trend + high RVOL ({last['rvol']:.2f})", 1.0
+            sniper_bearish_stack = last['close'] < last['sma10'] < last['sma20']
+            if 'sma50' in last and not pd.isna(last['sma50']):
+                sniper_bearish_stack = last['close'] < last['sma10'] < last['sma20'] < last['sma50']
+
+            if long_term_bearish and sniper_bearish_stack and last_candle_red and close_relative_pos >= 0.8 and last['rvol'] > 2.2 and not volatility_excessive:
+                return True, f"SNIPER SHORT: trend + high-quality candle + extreme RVOL ({last['rvol']:.2f})", 1.0
 
         # 2. RSI Overbought (Mean Reversion)
         if "RSI" in active:
@@ -202,7 +211,7 @@ class Strategy:
         # Bearish Aggressive
         if "AGGRESSIVE" in active:
             aggressive_bearish = last['close'] < last['sma10'] and last['sma10'] < last['sma20']
-            if aggressive_bearish and last_candle_red and close_relative_pos >= 0.5 and volume_spike and not volatility_excessive:
+            if aggressive_bearish and last_candle_red and close_relative_pos >= 0.7 and last['rvol'] > 1.8 and not volatility_excessive:
                 return True, f"AGGRESSIVE SHORT: momentum play (RVOL: {last['rvol']:.2f})", 0.6
 
         return False, "failed all entry tiers", 0.0

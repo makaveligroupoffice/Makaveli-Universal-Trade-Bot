@@ -77,9 +77,9 @@ class Config:
         if s.strip()
     )
 
-    STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "1.0"))
-    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "2.5")) # Increased from 2.0
-    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "1.0")) # Enabled by default
+    STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "0.75"))
+    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "3.0")) # Increased from 2.5
+    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.5")) # Enabled by default
 
     # Advanced Portfolio Management
     KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.5"))

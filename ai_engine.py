@@ -51,7 +51,7 @@ class AIEngine:
             return response.choices[0].message.content.strip()
         except Exception as e:
             log.error(f"AI research summary failed: {e}")
-            return ""
+            raise e
 
     def evolve_code_from_research(self, current_code: str, research_summary: str) -> str:
         """
@@ -81,6 +81,7 @@ class AIEngine:
 
         prompt = f"""
 You are an expert algorithmic trading developer. 
+Your primary goal is to optimize a trading strategy to achieve a 75% or higher win rate and 10x account growth.
 Your task is to analyze external research or performance data and improve a trading strategy code in 'strategy.py'.
 {market_context}
 {context}
@@ -93,10 +94,12 @@ Current 'strategy.py' code:
 Instructions:
 1. Identify logic weaknesses or opportunities for improvement.
 2. Modify technical indicator thresholds, confirmation rules, or exit logic.
-3. Preserve all class and method signatures.
-4. Respond ONLY with the complete, updated Python code for the 'Strategy' class. 
-5. Do not include any explanations or markdown formatting outside the code block.
-6. Ensure the code is syntactically correct and includes all necessary imports from the original file.
+3. Focus on 'Sniper' (High-Probability) entries and 'Steady Cash Flow' scalps.
+4. Prioritize risk-adjusted returns to hit the 10x growth goal.
+5. Preserve all class and method signatures.
+6. Respond ONLY with the complete, updated Python code for the 'Strategy' class. 
+7. Do not include any explanations or markdown formatting outside the code block.
+8. Ensure the code is syntactically correct and includes all necessary imports from the original file.
 """
 
         try:

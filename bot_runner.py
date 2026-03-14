@@ -879,49 +879,70 @@ class AutoTrader:
 
 if __name__ == "__main__":
     import os
+    import subprocess
     
-    # Initialize DB in case it doesn't exist or is outdated
-    with app.app_context():
-        db.create_all()
-    
-    # Check for updates and update codebase if needed
-    updater = AutoUpdater()
-    if Config.ENABLE_AUTO_UPDATE:
-        try:
-            updater.check_for_updates()
-        except Exception as e:
-            log.error(f"Startup auto-update failed: {e}")
+    # Start the Bot HUD Display
+    hud_proc = None
+    try:
+        log.info("Starting Bot HUD Display (bot_display.py)...")
+        # Use sys.executable to ensure we use the same python interpreter
+        hud_proc = subprocess.Popen([sys.executable, "bot_display.py"], 
+                                     stdout=subprocess.DEVNULL, 
+                                     stderr=subprocess.DEVNULL)
+    except Exception as e:
+        log.error(f"Failed to start Bot HUD Display: {e}")
 
-    last_update_check = time.time()
-    
-    while True:
+    try:
+        # Initialize DB in case it doesn't exist or is outdated
         with app.app_context():
-            users = User.query.all()
-            if not users:
-                # If no users yet, run with default credentials from .env
-                log.info("No users found in database. Running with default credentials.")
-                AutoTrader().run() # This might need a non-infinite run or we handle it differently
-                # For now, let's break or sleep to avoid infinite loop of no-users
-                time.sleep(60)
-                continue
-
-            for user in users:
-                try:
-                    log.info(f"Processing trading cycle for user: {user.username}")
-                    trader = AutoTrader(user=user)
-                    
-                    # Run one cycle for this user
-                    trader.run(single_cycle=True)
-                    
-                except Exception as e:
-                    log.error(f"Error processing user {user.username}: {e}")
-
-        # Periodic Auto-Update check (every 1 hour)
-        if Config.ENABLE_AUTO_UPDATE and time.time() - last_update_check > 3600:
+            db.create_all()
+        
+        # Check for updates and update codebase if needed
+        updater = AutoUpdater()
+        if Config.ENABLE_AUTO_UPDATE:
             try:
                 updater.check_for_updates()
-                last_update_check = time.time()
             except Exception as e:
-                log.error(f"Auto-update failed: {e}")
+                log.error(f"Startup auto-update failed: {e}")
 
-        time.sleep(20)
+        last_update_check = time.time()
+        
+        while True:
+            with app.app_context():
+                users = User.query.all()
+                if not users:
+                    # If no users yet, run with default credentials from .env
+                    log.info("No users found in database. Running with default credentials.")
+                    AutoTrader().run() # This might need a non-infinite run or we handle it differently
+                    # For now, let's break or sleep to avoid infinite loop of no-users
+                    time.sleep(60)
+                    continue
+
+                for user in users:
+                    try:
+                        log.info(f"Processing trading cycle for user: {user.username}")
+                        trader = AutoTrader(user=user)
+                        
+                        # Run one cycle for this user
+                        trader.run(single_cycle=True)
+                        
+                    except Exception as e:
+                        log.error(f"Error processing user {user.username}: {e}")
+
+            # Periodic Auto-Update check (every 1 hour)
+            if Config.ENABLE_AUTO_UPDATE and time.time() - last_update_check > 3600:
+                try:
+                    updater.check_for_updates()
+                    last_update_check = time.time()
+                except Exception as e:
+                    log.error(f"Auto-update failed: {e}")
+
+            time.sleep(20)
+    finally:
+        if hud_proc:
+            log.info("Shutting down Bot HUD Display...")
+            hud_proc.terminate()
+            try:
+                hud_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                hud_proc.kill()
