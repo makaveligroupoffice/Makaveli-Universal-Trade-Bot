@@ -23,6 +23,7 @@ from trade_journal import TradeJournal
 from notifications import send_notification
 from ai_engine import AIEngine
 from research import ResearchEngine
+from backup import BackupManager
 from updater import AutoUpdater
 from models import db, User
 
@@ -79,6 +80,7 @@ class AutoTrader:
         self.learning = LearningEngine(journal_path)
         self.ai = AIEngine()
         self.researcher = ResearchEngine()
+        self.backup_mgr = BackupManager()
         self.updater = AutoUpdater()
         self.state = self.state_store.load()
         self.consecutive_failures = 0
@@ -469,7 +471,7 @@ class AutoTrader:
                         side=side_info
                     )
                     self._bump_summary("buys_filled" if side_info == "buy" else "sells_filled")
-                    self.risk.record_trade(0.0)
+                    self.risk.record_trade(0.0, symbol=symbol, is_entry=True)
                 else: # Exits (sell/cover)
                     pos_info = self.positions.get(symbol, {})
                     entry_price = pos_info.get("entry_price", 0.0)
@@ -490,7 +492,7 @@ class AutoTrader:
                         pnl=pnl
                     )
                     self._bump_summary("sells_filled" if side_info == "sell" else "buys_filled")
-                    self.risk.record_trade(pnl)
+                    self.risk.record_trade(pnl, symbol=symbol, is_entry=False)
                     if symbol in self.state["positions"]:
                         del self.state["positions"][symbol]
 
@@ -553,6 +555,13 @@ class AutoTrader:
             log.info("Risk rules block new entries")
             return
 
+        # 4. Global Equity Check
+        account = self.broker.get_account()
+        current_equity = float(getattr(account, "equity", Config.STARTING_EQUITY))
+        if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, current_equity=current_equity):
+            log.warning(f"Risk rules (Equity/Drawdown) block new entries. Equity: ${current_equity:.2f}")
+            return
+
         if self._minutes_to_close() <= 10:
             log.info("Skipping entries: too close to end of trading window")
             return
@@ -574,6 +583,11 @@ class AutoTrader:
             
             # Check if there is already a pending order for this symbol
             if any(info.get("symbol") == symbol for info in self.pending_orders.values()):
+                continue
+
+            # 5. Sector/Diversity Check
+            if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, symbol=symbol, current_equity=current_equity):
+                log.info(f"Skipping {symbol}: Sector limit reached or Portfolio too concentrated.")
                 continue
 
             allowed, live_reason = self._symbol_allowed_for_live(symbol)
@@ -847,14 +861,11 @@ class AutoTrader:
 
                     # Run Nightly Research before final shutdown
                     try:
-                        from learning import MarketResearcher
-                        researcher = MarketResearcher(self.dynamic_config)
-                        updates = researcher.perform_nightly_research()
-                        if updates:
-                            self.learning.state.update(updates)
-                            self.learning._save_model()
+                        self.researcher.perform_internet_research()
+                        # Also perform backup after research
+                        self.backup_mgr.create_backup()
                     except Exception as e:
-                        log.error(f"Nightly Research failed: {e}")
+                        log.error(f"Nightly Research or Backup failed: {e}")
 
                     break
 

@@ -33,7 +33,17 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
     - Support for Market and Limit Orders.
     - Trailing Stop-Loss and Take-Profit logic.
     - **Hot-Reloading**: Update your code while the bot is running—it will pick up changes instantly without stopping.
-- **Manual Trade Monitoring**: The bot can adopt and manage trades you open manually on the Alpaca dashboard, applying its automated trailing stops to your own picks.
+- **Advanced Portfolio Safeguards**:
+    - **Sector Diversification**: Automatically prevents overexposure to any single industry (e.g., tech, crypto, bonds).
+    - **Equity Curve Drawdown Protection**: A built-in circuit breaker that halts trading if the portfolio drops below a specified percentage from its all-time high.
+    - **Manual Trade Monitoring**: The bot can adopt and manage trades you open manually on the Alpaca dashboard, applying its automated trailing stops to your own picks.
+- **Intelligent AI Verification**:
+    - **Market Context Filtering**: The AI now reviews every trade against broader market indicators like **VIX** and **SPY** trends.
+    - **AI Reasoning Logs**: Every decision the AI makes is logged to `logs/ai_reasoning.log`, providing multi-step logical justifications for every entry.
+- **Professional Investment Dashboard**:
+    - A real-time console (`dashboard.py`) that displays PnL, Win Rate, Projected Monthly Growth, and active positions with color-coded profit status.
+- **Autonomous 'DNA' Backups**: 
+    - Automatically creates timestamped zip backups of your database, configuration, and strategy code during every nightly maintenance cycle.
 - **Distributed Auto-Updates**: If you share the code or run it on multiple machines, the bot can **automatically pull code updates from your GitHub repository** and apply them live via hot-reloading. This ensures all your instances are always running the latest evolved "DNA".
 - **User Authentication & Multi-User Support**: On new downloads, the bot now includes a **Login and Registration** system to protect each user's data and access. This includes JWT token authentication for APIs and Flask-Login for browser sessions.
 - **Multi-Account Log Centralization**: You can now link multiple bot instances to a single "Master" bot to collect and analyze paper trading logs in one place. This allows you to track the combined success rate across a network of different accounts and settings.
@@ -98,7 +108,12 @@ python3 webhook_server.py
 python3 bot_runner.py
 ```
 
-**Terminal 3 (Tunnel):**
+**Terminal 3 (Dashboard):**
+```bash
+python3 dashboard.py
+```
+
+**Terminal 4 (Tunnel):**
 ```bash
 ngrok http 5000
 ```

@@ -29,6 +29,14 @@ class Config:
     MAX_OPEN_POSITIONS: int = int(os.getenv("MAX_OPEN_POSITIONS", "5"))
     MAX_POSITION_VALUE_DOLLARS: float = float(os.getenv("MAX_POSITION_VALUE_DOLLARS", "100.00"))
     MAX_ACCOUNT_DEPLOYMENT_PCT: float = float(os.getenv("MAX_ACCOUNT_DEPLOYMENT_PCT", "25.0"))
+    
+    # Portfolio Diversification
+    MAX_POSITIONS_PER_SECTOR: int = int(os.getenv("MAX_POSITIONS_PER_SECTOR", "2"))
+    MAX_EQUITY_DRAWDOWN_PCT: float = float(os.getenv("MAX_EQUITY_DRAWDOWN_PCT", "15.0")) # Circuit breaker at 15% drawdown
+    
+    # Backups
+    ENABLE_AUTO_BACKUP: bool = os.getenv("ENABLE_AUTO_BACKUP", "true").lower() == "true"
+    BACKUP_DIR: str = os.getenv("BACKUP_DIR", "backups")
 
     # Trading window (local machine time)
     ALLOWED_START_HHMM: str = os.getenv("ALLOWED_START_HHMM", "0935")

@@ -30,6 +30,8 @@ class RiskManager:
             "trades_today": 0,
             "seen_alert_ids": [],
             "daily_pnl": 0.0,
+            "peak_equity": Config.STARTING_EQUITY,
+            "sector_counts": {},
         }
 
     def _load_state(self) -> dict:
@@ -47,7 +49,9 @@ class RiskManager:
 
     def _roll_day_if_needed(self) -> None:
         if self.state.get("date") != self._today_str():
+            old_peak = self.state.get("peak_equity", Config.STARTING_EQUITY)
             self.state = self._default_state()
+            self.state["peak_equity"] = old_peak # Peak equity persists across days
             self._save_state()
 
     @staticmethod
@@ -123,22 +127,59 @@ class RiskManager:
         
         return clamped_kelly
 
-    def record_trade(self, pnl_change: float = 0.0) -> None:
+    def record_trade(self, pnl_change: float = 0.0, symbol: str | None = None, is_entry: bool = True) -> None:
         self._roll_day_if_needed()
         # Increment trade count for any trade (entry or exit)
         self.state["trades_today"] = int(self.state.get("trades_today", 0)) + 1
         # Accumulate PnL
         self.state["daily_pnl"] = float(self.state.get("daily_pnl", 0.0)) + float(pnl_change)
+        
+        # Track sectors for entries
+        if is_entry and symbol:
+            sector = self._get_symbol_sector(symbol)
+            counts = self.state.get("sector_counts", {})
+            counts[sector] = counts.get(sector, 0) + 1
+            self.state["sector_counts"] = counts
+        elif not is_entry and symbol:
+            sector = self._get_symbol_sector(symbol)
+            counts = self.state.get("sector_counts", {})
+            if sector in counts:
+                counts[sector] = max(0, counts[sector] - 1)
+            self.state["sector_counts"] = counts
+
         self._save_state()
 
-    def get_daily_summary(self) -> dict:
-        self._roll_day_if_needed()
-        return {
-            "daily_pnl": float(self.state.get("daily_pnl", 0.0)),
-            "trades_count": int(self.state.get("trades_today", 0))
-        }
+    def update_peak_equity(self, current_equity: float) -> None:
+        peak = self.state.get("peak_equity", 0.0)
+        if current_equity > peak:
+            self.state["peak_equity"] = current_equity
+            self._save_state()
 
-    def can_trade(self, is_exit: bool = False, current_hhmm: int | None = None) -> bool:
+    def _get_symbol_sector(self, symbol: str) -> str:
+        """
+        Retrieves the sector for a given symbol. 
+        In a real app, this would use a proper API. 
+        For now, we'll use a simplified mapping or 'Unknown'.
+        """
+        # Bond Universe is its own 'sector'
+        from universe import BOND_UNIVERSE
+        if symbol in BOND_UNIVERSE:
+            return "Bonds"
+        
+        # Crypto is its own 'sector'
+        if "/" in symbol or symbol in ["BTC", "ETH", "LTC"]:
+            return "Crypto"
+
+        # Simplified stock mapping for demonstration
+        sector_map = {
+            "AAPL": "Technology", "MSFT": "Technology", "NVDA": "Technology", "TSLA": "Consumer Cyclical",
+            "F": "Consumer Cyclical", "SOFI": "Financial Services", "PLTR": "Technology",
+            "SNAP": "Communication Services", "NIO": "Consumer Cyclical", "ACB": "Healthcare",
+            "SNDL": "Healthcare", "TLT": "Bonds", "GLD": "Commodities"
+        }
+        return sector_map.get(symbol, "Other")
+
+    def can_trade(self, is_exit: bool = False, current_hhmm: int | None = None, symbol: str | None = None, current_equity: float | None = None) -> bool:
         """
         Exit/sell trades should still be allowed even when risk blocks new buys.
         """
@@ -147,25 +188,39 @@ class RiskManager:
         if is_exit:
             return True
 
-        # Use provided hhmm (from market clock) or fall back to local machine time
+        # 1. Trading Window
         now = current_hhmm if current_hhmm is not None else int(datetime.now().strftime("%H%M"))
         start = int(Config.ALLOWED_START_HHMM)
         end = int(Config.ALLOWED_END_HHMM)
         if not (start <= now <= end):
             return False
 
+        # 2. Daily Trade Limit
         if int(self.state.get("trades_today", 0)) >= Config.MAX_TRADES_PER_DAY:
             return False
 
+        # 3. Daily Loss Limit
         max_loss = Config.MAX_DAILY_LOSS_DOLLARS
         if Config.USE_PERCENTAGE_RISK:
-            # We don't have broker access here easily, but we can assume starting equity if not found
-            # Ideally we'd pass equity or acct to can_trade
-            # For now, let's use the STARTING_EQUITY as a base for daily loss if USE_PERCENTAGE_RISK is on
-            # and we are in risk.py which is more static.
-            max_loss = Config.STARTING_EQUITY * (Config.MAX_DAILY_LOSS_PCT / 100.0)
+            base_equity = current_equity if current_equity else Config.STARTING_EQUITY
+            max_loss = base_equity * (Config.MAX_DAILY_LOSS_PCT / 100.0)
 
-        if abs(float(self.state.get("daily_pnl", 0.0))) >= max_loss:
+        if abs(float(self.state.get("daily_pnl", 0.0))) >= max_loss and float(self.state.get("daily_pnl", 0.0)) < 0:
             return False
+
+        # 4. Equity Drawdown Protection (Circuit Breaker)
+        if current_equity:
+            self.update_peak_equity(current_equity)
+            peak = self.state.get("peak_equity", current_equity)
+            drawdown = (peak - current_equity) / peak
+            if drawdown >= (Config.MAX_EQUITY_DRAWDOWN_PCT / 100.0):
+                return False
+
+        # 5. Sector Diversification
+        if symbol:
+            sector = self._get_symbol_sector(symbol)
+            counts = self.state.get("sector_counts", {})
+            if counts.get(sector, 0) >= Config.MAX_POSITIONS_PER_SECTOR:
+                return False
 
         return True

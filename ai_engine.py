@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+from datetime import datetime
 from config import Config
 
 log = logging.getLogger("autobot")
@@ -66,10 +67,22 @@ class AIEngine:
             log.warning("AI client not available. Skipping AI code evolution.")
             return current_code
 
+        # Add global market context if possible
+        market_context = ""
+        try:
+            from market_data import MarketDataClient
+            md = MarketDataClient()
+            spy_bars = md.get_recent_bars("SPY", minutes=60)
+            if spy_bars:
+                spy_change = (float(spy_bars[-1].close) - float(spy_bars[0].close)) / float(spy_bars[0].close)
+                market_context = f"\nGlobal Market Context: SPY 1-hour change is {spy_change:.2%}.\n"
+        except:
+            pass
+
         prompt = f"""
 You are an expert algorithmic trading developer. 
 Your task is to analyze external research or performance data and improve a trading strategy code in 'strategy.py'.
-
+{market_context}
 {context}
 
 Current 'strategy.py' code:
@@ -142,27 +155,62 @@ Instructions:
         if not self.client or not Config.ENABLE_AI_TRADE_FILTER:
             return True # Pass through if AI filter is disabled
 
+        # Add market context for better decision making
+        market_context = {}
+        try:
+            from market_data import MarketDataClient
+            md = MarketDataClient()
+            # Try to get VIX for volatility context
+            vix_quote = md.get_latest_quote("VIX")
+            if vix_quote:
+                market_context["VIX"] = float(vix_quote.ask_price or 0)
+            
+            # SPY Trend
+            spy_bars = md.get_recent_bars("SPY", minutes=30)
+            if spy_bars:
+                market_context["SPY_30m_trend"] = "UP" if float(spy_bars[-1].close) > float(spy_bars[0].close) else "DOWN"
+        except:
+            pass
+
         prompt = f"""
 Should we enter a trade for {symbol} based on the {strategy_name} strategy?
 
-Current Technical Indicators:
+Market Context:
+{json.dumps(market_context, indent=2)}
+
+Current Technical Indicators for {symbol}:
 {json.dumps(indicators, indent=2)}
 
-Answer with "YES" or "NO" and a brief reason. Format: "DECISION: [YES/NO] | REASON: [Your reason]"
+Answer with "YES" or "NO" and provide a detailed reason. 
+Format: 
+DECISION: [YES/NO]
+REASONING: [Your detailed multi-step logical reasoning]
+ADVICE: [Specific advice for this trade, e.g., 'Use tighter stop' or 'Wait for more volume']
 """
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a conservative risk manager. Your goal is to avoid low-probability setups."},
+                    {"role": "system", "content": "You are a conservative risk manager. Your goal is to avoid low-probability setups and ensure alignment with broader market trends."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=100,
+                max_tokens=250,
                 temperature=0.0
             )
-            decision_text = response.choices[0].message.content.strip().upper()
-            log.info(f"AI Decision for {symbol}: {decision_text}")
-            return "DECISION: YES" in decision_text
+            decision_text = response.choices[0].message.content.strip()
+            log.info(f"AI Review for {symbol}:\n{decision_text}")
+            
+            # Log the full reasoning to a dedicated file for the user
+            self._log_ai_reasoning(symbol, decision_text)
+            
+            return "DECISION: YES" in decision_text.upper()
         except Exception as e:
             log.error(f"AI signal verification failed for {symbol}: {e}")
             return True # Fallback to true to avoid missing trades on AI error
+
+    def _log_ai_reasoning(self, symbol: str, text: str):
+        """Logs AI reasoning to a separate file for user transparency."""
+        log_file = os.path.join(Config.LOG_DIR, "ai_reasoning.log")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"--- {timestamp} | {symbol} ---\n{text}\n\n")
