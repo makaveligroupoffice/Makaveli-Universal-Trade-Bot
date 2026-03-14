@@ -880,6 +880,10 @@ class AutoTrader:
 if __name__ == "__main__":
     import os
     
+    # Initialize DB in case it doesn't exist or is outdated
+    with app.app_context():
+        db.create_all()
+    
     # Check for updates and update codebase if needed
     updater = AutoUpdater()
     if Config.ENABLE_AUTO_UPDATE:
