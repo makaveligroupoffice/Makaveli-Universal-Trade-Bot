@@ -40,7 +40,7 @@ class BotDisplay:
 
         # Window size and position
         self.width = 240
-        self.height = 300
+        self.height = 350
         self.root.geometry(f"{self.width}x{self.height}+100+100")
 
         # Make it draggable
@@ -48,23 +48,43 @@ class BotDisplay:
         self.root.bind("<B1-Motion>", self.do_move)
 
         # UI Components
-        self.canvas = tk.Canvas(root, width=self.width, height=200, bg="black", highlightthickness=0)
+        self.canvas = tk.Canvas(root, width=self.width, height=250, bg="black", highlightthickness=0)
         self.canvas.pack()
 
-        # --- Character Design (Full Figured Bot) ---
+        # --- Character Design (Complex Cyber-Bot) ---
+        # Aura / Background Circuitry
+        self.aura = []
+        for i in range(5):
+            r = 30 + (i * 15)
+            a = self.canvas.create_oval(120-r, 100-r, 120+r, 100+r, outline="#003300", width=1, state="hidden")
+            self.aura.append(a)
+
         # Head
         self.head = self.canvas.create_oval(90, 20, 150, 70, outline="#00FF00", width=2)
+        # Scan-line on face
+        self.scan_line = self.canvas.create_line(95, 45, 145, 45, fill="#00FF00", width=1, dash=(2, 2))
+        
         # Eyes
         self.eye_l = self.canvas.create_oval(105, 35, 115, 45, fill="#00FF00", outline="")
         self.eye_r = self.canvas.create_oval(125, 35, 135, 45, fill="#00FF00", outline="")
-        # Torso
-        self.torso = self.canvas.create_polygon(90, 75, 150, 75, 160, 140, 80, 140, outline="#00FF00", fill="black", width=2)
-        # Arms
-        self.arm_l = self.canvas.create_line(90, 85, 60, 110, fill="#00FF00", width=3)
-        self.arm_r = self.canvas.create_line(150, 85, 180, 110, fill="#00FF00", width=3)
+        
+        # Torso (Geometric Panel)
+        self.torso = self.canvas.create_polygon(90, 75, 150, 75, 165, 150, 75, 150, outline="#00FF00", fill="black", width=2)
+        # Chest Monitor (Data display on torso)
+        self.chest_display = self.canvas.create_rectangle(100, 90, 140, 120, outline="#004400", fill="#001100")
+        self.chest_text = self.canvas.create_text(120, 105, text="SYNC", fill="#00FF00", font=("Courier", 6))
+
+        # Arms with Joints
+        self.arm_l = self.canvas.create_line(90, 85, 60, 115, fill="#00FF00", width=3)
+        self.arm_r = self.canvas.create_line(150, 85, 180, 115, fill="#00FF00", width=3)
+        self.joint_l = self.canvas.create_oval(85, 80, 95, 90, fill="#00FF00", outline="")
+        self.joint_r = self.canvas.create_oval(145, 80, 155, 90, fill="#00FF00", outline="")
+
         # Legs
-        self.leg_l = self.canvas.create_line(100, 140, 95, 180, fill="#00FF00", width=3)
-        self.leg_r = self.canvas.create_line(140, 140, 145, 180, fill="#00FF00", width=3)
+        self.leg_l = self.canvas.create_line(100, 150, 90, 195, fill="#00FF00", width=3)
+        self.leg_r = self.canvas.create_line(140, 150, 150, 195, fill="#00FF00", width=3)
+        self.foot_l = self.canvas.create_oval(80, 190, 100, 200, outline="#00FF00", width=1)
+        self.foot_r = self.canvas.create_oval(140, 190, 160, 200, outline="#00FF00", width=1)
 
         # Text labels
         self.lbl_pnl = tk.Label(root, text="Daily PnL: $0.00", fg="#00FF00", bg="black", font=("Courier", 12, "bold"))
@@ -76,11 +96,17 @@ class BotDisplay:
         self.lbl_positions = tk.Label(root, text="Positions: 0", fg="#AAAAAA", bg="black", font=("Courier", 10))
         self.lbl_positions.pack()
 
+        # New: Symbol detail
+        self.lbl_active = tk.Label(root, text="SYMBOL: ---", fg="#555555", bg="black", font=("Courier", 8))
+        self.lbl_active.pack()
+
         # Animation variables
         self.pulse_val = 0
         self.pulse_dir = 1
         self.blink_timer = 0
         self.breath_val = 0
+        self.scan_val = 0
+        self.aura_val = 0
         
         # State paths
         self.bot_state_path = Config.BOT_STATE_FILE
@@ -108,16 +134,29 @@ class BotDisplay:
         offset = math.sin(self.breath_val) * 3
         
         # Update torso breathing
-        self.canvas.coords(self.torso, 90, 75, 150, 75, 160 + offset, 140, 80 - offset, 140)
+        self.canvas.coords(self.torso, 90, 75, 150, 75, 165 + offset, 150, 75 - offset, 150)
         
         # Update arms breathing
-        self.canvas.coords(self.arm_l, 90, 85, 60 - offset, 110 + offset)
-        self.canvas.coords(self.arm_r, 150, 85, 180 + offset, 110 + offset)
+        self.canvas.coords(self.arm_l, 90, 85, 60 - offset, 115 + offset)
+        self.canvas.coords(self.arm_r, 150, 85, 180 + offset, 115 + offset)
+        self.canvas.coords(self.joint_l, 85 - offset*0.5, 80 - offset*0.5, 95 + offset*0.5, 90 + offset*0.5)
+        self.canvas.coords(self.joint_r, 145 - offset*0.5, 80 - offset*0.5, 155 + offset*0.5, 90 + offset*0.5)
 
-        # 2. Blinking effect
+        # 2. Scanning effect on face
+        self.scan_val += 0.1
+        scan_offset = math.sin(self.scan_val) * 15
+        self.canvas.coords(self.scan_line, 95, 45 + scan_offset, 145, 45 + scan_offset)
+
+        # 3. Aura pulsing
+        self.aura_val += 0.05
+        for i, a in enumerate(self.aura):
+            vis = "normal" if math.sin(self.aura_val + i) > 0.5 else "hidden"
+            self.canvas.itemconfig(a, state=vis)
+
+        # 4. Blinking effect
         self.blink_timer += 1
-        if self.blink_timer > 50: # Blink every ~2.5 seconds
-            if self.blink_timer < 55: # Blink lasts 5 frames
+        if self.blink_timer > 60: # Blink every ~3 seconds
+            if self.blink_timer < 65:
                 self.canvas.itemconfig(self.eye_l, state="hidden")
                 self.canvas.itemconfig(self.eye_r, state="hidden")
             else:
@@ -125,12 +164,13 @@ class BotDisplay:
                 self.canvas.itemconfig(self.eye_r, state="normal")
                 self.blink_timer = 0
 
-        # 3. Pulse effect (eyes glow)
-        self.pulse_val += 0.1 * self.pulse_dir
-        if self.pulse_val >= 1 or self.pulse_val <= 0:
-            self.pulse_dir *= -1
-        
-        # Color intensity based on pulse could be added here if we used hex colors dynamically
+        # 5. Chest Monitor "Heartbeat" / Glitch
+        if time.time() % 2 < 0.2:
+            self.canvas.itemconfig(self.chest_text, text="SCAN")
+        elif time.time() % 3 < 0.3:
+            self.canvas.itemconfig(self.chest_text, text="LIVE")
+        else:
+            self.canvas.itemconfig(self.chest_text, text="SYNC")
         
         self.root.after(50, self.animate)
 
@@ -140,11 +180,17 @@ class BotDisplay:
             if os.path.exists(self.bot_state_path):
                 with open(self.bot_state_path, "r") as f:
                     bot_state = json.load(f)
-                num_pos = len(bot_state.get("positions", {}))
+                
+                positions = bot_state.get("positions", {})
+                num_pos = len(positions)
                 self.lbl_positions.config(text=f"Positions: {num_pos}")
+                
                 if num_pos > 0:
+                    symbols = ", ".join(list(positions.keys())[:2])
+                    self.lbl_active.config(text=f"SYMBOLS: {symbols}", fg="#00FF00")
                     self.lbl_status.config(text="Status: ACTIVE", fg="#00FF00")
                 else:
+                    self.lbl_active.config(text="SYMBOL: ---", fg="#555555")
                     self.lbl_status.config(text="Status: SCANNING", fg="#AAAAAA")
         except:
             pass
@@ -158,17 +204,29 @@ class BotDisplay:
                 pnl = risk_state.get("daily_pnl", 0.0)
                 
                 color = "#00FF00" if pnl >= 0 else "#FF0000"
+                dim_color = "#004400" if pnl >= 0 else "#440000"
+                
                 self.lbl_pnl.config(text=f"Daily PnL: ${pnl:.2f}", fg=color)
                 
                 # Apply color to the bot parts
                 self.canvas.itemconfig(self.head, outline=color)
+                self.canvas.itemconfig(self.scan_line, fill=color)
                 self.canvas.itemconfig(self.eye_l, fill=color)
                 self.canvas.itemconfig(self.eye_r, fill=color)
                 self.canvas.itemconfig(self.torso, outline=color)
+                self.canvas.itemconfig(self.chest_display, outline=dim_color)
+                self.canvas.itemconfig(self.chest_text, fill=color)
                 self.canvas.itemconfig(self.arm_l, fill=color)
                 self.canvas.itemconfig(self.arm_r, fill=color)
+                self.canvas.itemconfig(self.joint_l, fill=color)
+                self.canvas.itemconfig(self.joint_r, fill=color)
                 self.canvas.itemconfig(self.leg_l, fill=color)
                 self.canvas.itemconfig(self.leg_r, fill=color)
+                self.canvas.itemconfig(self.foot_l, outline=color)
+                self.canvas.itemconfig(self.foot_r, outline=color)
+                
+                for a in self.aura:
+                    self.canvas.itemconfig(a, outline=dim_color)
         except:
             pass
 
