@@ -112,6 +112,14 @@ class BotDisplay:
         self.bot_state_path = Config.BOT_STATE_FILE
         self.risk_state_path = Config.RISK_STATE_FILE
 
+        # --- Random Wandering Logic ---
+        self.target_x = 100
+        self.target_y = 100
+        self.move_speed = 1.0 # Pixels per frame
+        self.last_target_update = 0
+        self.screen_w = self.root.winfo_screenwidth()
+        self.screen_h = self.root.winfo_screenheight()
+
         self.update_data()
         self.animate()
 
@@ -127,8 +135,32 @@ class BotDisplay:
         # Ensure it doesn't get lost off-screen (basic check)
         # MacOS screen sizes can vary, but we want it to be movable anywhere
         self.root.geometry(f"+{x}+{y}")
+        # When manually moved, update targets to avoid 'snapping' back immediately
+        self.target_x, self.target_y = x, y
 
     def animate(self):
+        # 0. Random Movement (Wandering)
+        import random
+        now = time.time()
+        if now - self.last_target_update > 5: # Pick a new target every 5 seconds
+            # Keep away from edges
+            self.target_x = random.randint(50, self.screen_w - self.width - 50)
+            self.target_y = random.randint(50, self.screen_h - self.height - 50)
+            self.last_target_update = now
+
+        curr_x = self.root.winfo_x()
+        curr_y = self.root.winfo_y()
+        
+        # Smoothly move towards target
+        dx = self.target_x - curr_x
+        dy = self.target_y - curr_y
+        dist = math.sqrt(dx**2 + dy**2)
+        
+        if dist > 5: # Only move if far enough
+            move_x = (dx / dist) * self.move_speed
+            move_y = (dy / dist) * self.move_speed
+            self.root.geometry(f"+{int(curr_x + move_x)}+{int(curr_y + move_y)}")
+
         # 1. Breathing effect (torso and arms)
         self.breath_val += 0.05
         offset = math.sin(self.breath_val) * 3
