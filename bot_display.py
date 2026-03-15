@@ -11,13 +11,8 @@ class BotDisplay:
         self.root.title("TradeBot HUD")
         self.root.overrideredirect(True)  # Remove window borders
         self.root.attributes("-topmost", True)  # Always on top
-        # MacOS transparency: -transparent is boolean on some systems, let's use it properly
-        # if the system allows. We also use alpha for a nice UI feel.
-        try:
-            self.root.attributes("-transparent", True)
-        except:
-            pass
-        self.root.attributes("-alpha", 0.9)
+        # No transparency as per user request
+        self.root.attributes("-alpha", 1.0)
         self.root.configure(bg="black")
 
         # MacOS specific: Make visible on all Spaces (home screens)
@@ -123,11 +118,31 @@ class BotDisplay:
         self.target_y = 100
         self.move_speed = 1.0 # Pixels per frame
         self.last_target_update = 0
-        self.screen_w = self.root.winfo_screenwidth()
-        self.screen_h = self.root.winfo_screenheight()
+        
+        # Multiple displays support: Get total desktop area if possible
+        # winfo_screenwidth() usually only returns the primary screen.
+        self.refresh_screen_dims()
 
         self.update_data()
         self.animate()
+
+    def refresh_screen_dims(self):
+        """Update screen dimensions to handle multi-monitor setups if they change"""
+        try:
+            # On macOS with Tk, winfo_screenwidth/height often reflects the primary display.
+            # To 'wander' across multiple displays, we might need a more aggressive range.
+            # We'll stick to a reasonable detection for now, or allow jumping if user has multi-monitors.
+            self.screen_w = self.root.winfo_screenwidth()
+            self.screen_h = self.root.winfo_screenheight()
+            
+            # If winfo_vrootwidth() is larger, use that (virtual root)
+            vw = self.root.winfo_vrootwidth()
+            vh = self.root.winfo_vrootheight()
+            if vw > self.screen_w: self.screen_w = vw
+            if vh > self.screen_h: self.screen_h = vh
+        except:
+            self.screen_w = 1200
+            self.screen_h = 800
 
     def start_move(self, event):
         self.x = event.x
@@ -157,9 +172,29 @@ class BotDisplay:
             actual_move_speed *= 0.2 # Barely move when reading
             
         if now - self.last_target_update > 5: # Pick a new target every 5 seconds
-            # Keep away from edges
-            self.target_x = random.randint(50, self.screen_w - self.width - 50)
-            self.target_y = random.randint(50, self.screen_h - self.height - 50)
+            # Update screen dims in case of monitor change
+            self.refresh_screen_dims()
+            
+            # Allow wandering beyond the primary screen if multi-monitors are detected
+            # On macOS, coordinates like -1920 (for a monitor on the left) or 1920 (for monitor on the right) are possible
+            # We add some wiggle room for multi-monitor setups that aren't perfectly reported
+            
+            # Let's use a jumping strategy: 20% chance to jump to another screen-sized area
+            # if we are constrained to one screen by the OS reporting
+            margin = 50
+            if random.random() < 0.2:
+                # Randomly jump to a potentially new monitor coordinate
+                # This simulates 'crossing' over to other screens if they exist
+                # macOS displays are often arranged horizontally or vertically
+                directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (0, 0)]
+                dx, dy = random.choice(directions)
+                self.target_x = (dx * self.screen_w) + random.randint(margin, self.screen_w - self.width - margin)
+                self.target_y = (dy * self.screen_h) + random.randint(margin, self.screen_h - self.height - margin)
+            else:
+                # Normal wandering on the 'current' coordinate space
+                self.target_x = random.randint(margin, self.screen_w - self.width - margin)
+                self.target_y = random.randint(margin, self.screen_h - self.height - margin)
+                
             self.last_target_update = now
 
         curr_x = self.root.winfo_x()
