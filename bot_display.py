@@ -93,6 +93,10 @@ class BotDisplay:
         self.lbl_status = tk.Label(root, text="Status: IDLE", fg="#AAAAAA", bg="black", font=("Courier", 10))
         self.lbl_status.pack()
 
+        # Operational State Simulation Text
+        self.lbl_mode = tk.Label(root, text="MODE: SCANNING", fg="#00FFFF", bg="black", font=("Courier", 9, "italic"))
+        self.lbl_mode.pack()
+
         self.lbl_positions = tk.Label(root, text="Positions: 0", fg="#AAAAAA", bg="black", font=("Courier", 10))
         self.lbl_positions.pack()
 
@@ -107,6 +111,8 @@ class BotDisplay:
         self.breath_val = 0
         self.scan_val = 0
         self.aura_val = 0
+        self.op_state = "SCANNING"
+        self.trading_pulse = 0
         
         # State paths
         self.bot_state_path = Config.BOT_STATE_FILE
@@ -142,6 +148,14 @@ class BotDisplay:
         # 0. Random Movement (Wandering)
         import random
         now = time.time()
+        
+        # Adjust speed based on state
+        actual_move_speed = self.move_speed
+        if self.op_state == "TRADING":
+            actual_move_speed *= 2.0 # Move faster when trading
+        elif self.op_state == "READING":
+            actual_move_speed *= 0.2 # Barely move when reading
+            
         if now - self.last_target_update > 5: # Pick a new target every 5 seconds
             # Keep away from edges
             self.target_x = random.randint(50, self.screen_w - self.width - 50)
@@ -157,12 +171,19 @@ class BotDisplay:
         dist = math.sqrt(dx**2 + dy**2)
         
         if dist > 5: # Only move if far enough
-            move_x = (dx / dist) * self.move_speed
-            move_y = (dy / dist) * self.move_speed
+            move_x = (dx / dist) * actual_move_speed
+            move_y = (dy / dist) * actual_move_speed
             self.root.geometry(f"+{int(curr_x + move_x)}+{int(curr_y + move_y)}")
 
         # 1. Breathing effect (torso and arms)
-        self.breath_val += 0.05
+        # Faster breathing when trading
+        breath_speed = 0.05
+        if self.op_state == "TRADING":
+            breath_speed = 0.15
+        elif self.op_state == "READING":
+            breath_speed = 0.02
+            
+        self.breath_val += breath_speed
         offset = math.sin(self.breath_val) * 3
         
         # Update torso breathing
@@ -175,19 +196,44 @@ class BotDisplay:
         self.canvas.coords(self.joint_r, 145 - offset*0.5, 80 - offset*0.5, 155 + offset*0.5, 90 + offset*0.5)
 
         # 2. Scanning effect on face
-        self.scan_val += 0.1
+        scan_speed = 0.1
+        if self.op_state == "TRADING":
+            scan_speed = 0.4 # Intense scanning
+        elif self.op_state == "READING":
+            scan_speed = 0.0 # Stop scanning
+            
+        self.scan_val += scan_speed
         scan_offset = math.sin(self.scan_val) * 15
-        self.canvas.coords(self.scan_line, 95, 45 + scan_offset, 145, 45 + scan_offset)
+        
+        if self.op_state == "READING":
+            # Looking down at a book
+            self.canvas.coords(self.scan_line, 105, 60, 135, 60) # Book-like line
+            self.canvas.itemconfig(self.scan_line, dash=()) # Solid line for book
+            # Move eyes down
+            self.canvas.coords(self.eye_l, 105, 50, 115, 60)
+            self.canvas.coords(self.eye_r, 125, 50, 135, 60)
+        else:
+            self.canvas.coords(self.scan_line, 95, 45 + scan_offset, 145, 45 + scan_offset)
+            self.canvas.itemconfig(self.scan_line, dash=(2, 2))
+            # Eyes in normal position
+            self.canvas.coords(self.eye_l, 105, 35, 115, 45)
+            self.canvas.coords(self.eye_r, 125, 35, 135, 45)
 
         # 3. Aura pulsing
-        self.aura_val += 0.05
+        aura_speed = 0.05
+        if self.op_state == "TRADING":
+            aura_speed = 0.2
+            
+        self.aura_val += aura_speed
         for i, a in enumerate(self.aura):
             vis = "normal" if math.sin(self.aura_val + i) > 0.5 else "hidden"
             self.canvas.itemconfig(a, state=vis)
 
-        # 4. Blinking effect
+        # 4. Blinking effect (disabled when reading/trading for focus)
         self.blink_timer += 1
-        if self.blink_timer > 60: # Blink every ~3 seconds
+        should_blink = self.op_state == "SCANNING"
+        
+        if should_blink and self.blink_timer > 60: # Blink every ~3 seconds
             if self.blink_timer < 65:
                 self.canvas.itemconfig(self.eye_l, state="hidden")
                 self.canvas.itemconfig(self.eye_r, state="hidden")
@@ -195,14 +241,24 @@ class BotDisplay:
                 self.canvas.itemconfig(self.eye_l, state="normal")
                 self.canvas.itemconfig(self.eye_r, state="normal")
                 self.blink_timer = 0
+        else:
+            self.canvas.itemconfig(self.eye_l, state="normal")
+            self.canvas.itemconfig(self.eye_r, state="normal")
 
         # 5. Chest Monitor "Heartbeat" / Glitch
-        if time.time() % 2 < 0.2:
-            self.canvas.itemconfig(self.chest_text, text="SCAN")
-        elif time.time() % 3 < 0.3:
-            self.canvas.itemconfig(self.chest_text, text="LIVE")
+        if self.op_state == "TRADING":
+             # Fast flashing
+             text = "TRADE" if (int(time.time() * 10) % 2 == 0) else "EXEC"
+             self.canvas.itemconfig(self.chest_text, text=text)
+        elif self.op_state == "READING":
+             self.canvas.itemconfig(self.chest_text, text="LEARN")
         else:
-            self.canvas.itemconfig(self.chest_text, text="SYNC")
+            if time.time() % 2 < 0.2:
+                self.canvas.itemconfig(self.chest_text, text="SCAN")
+            elif time.time() % 3 < 0.3:
+                self.canvas.itemconfig(self.chest_text, text="LIVE")
+            else:
+                self.canvas.itemconfig(self.chest_text, text="SYNC")
         
         self.root.after(50, self.animate)
 
@@ -212,6 +268,9 @@ class BotDisplay:
             if os.path.exists(self.bot_state_path):
                 with open(self.bot_state_path, "r") as f:
                     bot_state = json.load(f)
+                
+                self.op_state = bot_state.get("operational_state", "SCANNING")
+                self.lbl_mode.config(text=f"MODE: {self.op_state}")
                 
                 positions = bot_state.get("positions", {})
                 num_pos = len(positions)

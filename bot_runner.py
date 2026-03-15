@@ -139,9 +139,16 @@ class AutoTrader:
         return self.state.get("dynamic_config", {})
 
     def _save_state(self):
+        # Determine operational state for the HUD
+        if self.state.get("positions"):
+            self.state["operational_state"] = "TRADING"
+        else:
+            self.state["operational_state"] = "SCANNING"
+
         # Periodically evolve and adjust dynamic config
         now = time.time()
         if int(now) % 3600 < 60: # once an hour roughly
+             self.state["operational_state"] = "READING"
              self.learning.evolve()
              self.state["dynamic_config"] = self.learning.get_dynamic_config()
              
@@ -153,7 +160,7 @@ class AutoTrader:
                      if summary:
                          self.researcher.apply_research_to_strategy(summary)
                          self.state["last_internet_research"] = now
-
+        
         self.state_store.save(self.state)
 
     def _clear_pending_order(self, order_id: str):
