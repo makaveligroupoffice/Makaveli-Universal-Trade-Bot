@@ -1,0 +1,1 @@
+{"timestamp": "2026-03-16T14:50:06.581216", "symbol": "CTMX", "action": "MANUAL_BUYBACK (COVER)", "reason": "Price hit $7.37 (Short entry was $7.50)", "lesson": "Learned that 1-minute RSI < 30 is a critical exit signal for shorts, even if the primary trend (Double Top) is still bearish. Momentum exhaustion overrides the chart pattern."}

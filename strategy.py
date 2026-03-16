@@ -530,6 +530,16 @@ class Strategy:
         # --- Momentum rollover (The "Scalp" exit) ---
         # Skip this aggressive exit for manual trades or VERY strong "Hold" trends
         if not is_manual and not is_strong_trend:
+            # Check RSI extremes for early profit taking
+            if len(bars) >= 20:
+                df_full = Strategy._calculate_indicators(bars)
+                if df_full is not None:
+                    last_rsi = df_full['rsi14'].iloc[-1]
+                    if side == "buy" and last_rsi > 75:
+                        return True, f"RSI Overbought ({last_rsi:.1f}): Reached peak momentum floor"
+                    if side == "short" and last_rsi < 25:
+                        return True, f"RSI Oversold ({last_rsi:.1f}): Reached bottom momentum floor"
+
             # Expert Tuning: Tighten scalp profit floor to 0.15% for constant cash flow
             # but require 4 bars of reversal instead of 3 to avoid getting stopped out by noise.
             min_scalp_profit = float(os.getenv("SCALP_PROFIT_FLOOR", "0.15")) / 100.0
