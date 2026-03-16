@@ -166,7 +166,7 @@ class MarketDataClient:
         
         start = datetime.now(UTC) - timedelta(days=days)
         request = NewsRequest(
-            symbols=[symbol] if symbol else None,
+            symbols=symbol,
             start=start,
             limit=10
         )

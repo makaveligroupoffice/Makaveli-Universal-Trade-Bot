@@ -69,8 +69,12 @@ class CandlestickPatterns:
             'CP_THREE_LINE_STRIKE_BULLISH': 'bullish',
             'CP_THREE_LINE_STRIKE_BEARISH': 'bearish',
             'CP_THREE_WHITE_SOLDIERS': 'bullish',
+            'CP_TRI_STAR_BULLISH': 'bullish',
+            'CP_TRI_STAR_BEARISH': 'bearish',
             'CP_TWEEZER_BOTTOM': 'bullish',
-            'CP_TWEEZER_TOP': 'bearish'
+            'CP_TWEEZER_TOP': 'bearish',
+            'CP_LONG_LOWER_SHADOW': 'bullish',
+            'CP_LONG_UPPER_SHADOW': 'bearish'
         }
 
     @staticmethod
@@ -249,5 +253,19 @@ class CandlestickPatterns:
         df['CP_TWEEZER_BOTTOM'] = (df['low'] == df['low'].shift(1)) & (df['lower_shadow'] > df['body_avg'])
         # 66. Tweezer Top
         df['CP_TWEEZER_TOP'] = (df['high'] == df['high'].shift(1)) & (df['upper_shadow'] > df['body_avg'])
+
+        # 67. Tri-Star Bullish
+        df['CP_TRI_STAR_BULLISH'] = (df['is_doji'].shift(2) & df['is_doji'].shift(1) & df['is_doji'] & 
+                                    (df['low'].shift(1) < df['low'].shift(2)) & (df['low'].shift(1) < df['low']))
+        
+        # 68. Tri-Star Bearish
+        df['CP_TRI_STAR_BEARISH'] = (df['is_doji'].shift(2) & df['is_doji'].shift(1) & df['is_doji'] & 
+                                    (df['high'].shift(1) > df['high'].shift(2)) & (df['high'].shift(1) > df['high']))
+
+        # 69. Long Lower Shadow
+        df['CP_LONG_LOWER_SHADOW'] = (df['lower_shadow'] > (2.5 * df['body'])) & (df['lower_shadow'] > df['body_avg'] * 2)
+
+        # 70. Long Upper Shadow
+        df['CP_LONG_UPPER_SHADOW'] = (df['upper_shadow'] > (2.5 * df['body'])) & (df['upper_shadow'] > df['body_avg'] * 2)
 
         return df

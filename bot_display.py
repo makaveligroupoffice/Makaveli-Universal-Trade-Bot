@@ -7,6 +7,7 @@ from config import Config
 
 class BotDisplay:
     def __init__(self, root):
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Initializing BotDisplay...", flush=True)
         self.root = root
         self.root.title("TradeBot HUD")
         self.root.overrideredirect(True)  # Remove window borders
@@ -14,6 +15,9 @@ class BotDisplay:
         # No transparency as per user request
         self.root.attributes("-alpha", 1.0)
         self.root.configure(bg="black")
+        
+        # New: Tracking for logs
+        self.last_log_time = 0
 
         # MacOS specific: Make visible on all Spaces (home screens)
         # We use a trick for macOS to make the window a 'floating' utility window 
@@ -160,6 +164,13 @@ class BotDisplay:
         self.target_x, self.target_y = x, y
 
     def animate(self):
+        # Update screen dims and log position periodically
+        now = time.time()
+        if now - self.last_log_time > 60:
+            self.refresh_screen_dims()
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] HUD Position: {self.root.winfo_x()}, {self.root.winfo_y()} | Screen: {self.screen_w}x{self.screen_h}", flush=True)
+            self.last_log_time = now
+
         # 0. Random Movement (Wandering)
         import random
         now = time.time()
