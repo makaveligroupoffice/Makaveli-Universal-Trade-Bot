@@ -184,11 +184,16 @@ Market Context:
 Current Technical Indicators for {symbol}:
 {json.dumps(indicators, indent=2)}
 
+Risk Management Knowledge:
+- Standard Stop Loss: {Config.STOP_LOSS_PCT}%
+- Standard Take Profit: {Config.TAKE_PROFIT_PCT}%
+- Trailing Stop: {Config.TRAILING_STOP_PCT}% (activates after {Config.TRAILING_STOP_ACTIVATION_PCT}% profit)
+
 Answer with "YES" or "NO" and provide a detailed reason. 
 Format: 
 DECISION: [YES/NO]
 REASONING: [Your detailed multi-step logical reasoning]
-ADVICE: [Specific advice for this trade, e.g., 'Use tighter stop' or 'Wait for more volume']
+ADVICE: [Specific advice for this trade, e.g., 'Use tighter stop', 'Trailing stop is ideal here because of high ATR', or 'Wait for more volume']
 """
         try:
             response = self.client.chat.completions.create(

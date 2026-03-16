@@ -80,6 +80,7 @@ class Config:
     STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "0.75"))
     TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "3.0")) # Increased from 2.5
     TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.5")) # Enabled by default
+    TRAILING_STOP_ACTIVATION_PCT: float = float(os.getenv("TRAILING_STOP_ACTIVATION_PCT", "0.25")) # Only start trailing once in profit
 
     # Partial Take Profit Controls (Dollar based)
     PARTIAL_TP1_DOLLARS: float = float(os.getenv("PARTIAL_TP1_DOLLARS", "10.00"))

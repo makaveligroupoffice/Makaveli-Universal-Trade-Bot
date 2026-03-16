@@ -5,6 +5,7 @@ from datetime import datetime
 
 from config import Config
 from candlestick_patterns import CandlestickPatterns
+from chart_patterns import ChartPatterns
 
 
 class Strategy:
@@ -17,7 +18,7 @@ class Strategy:
             return None
 
         import pandas as pd
-        df = pd.DataFrame([{"close": float(b.close), "high": float(b.high), "low": float(b.low), "volume": float(b.volume)} for b in bars])
+        df = pd.DataFrame([{"open": float(b.open), "close": float(b.close), "high": float(b.high), "low": float(b.low), "volume": float(b.volume)} for b in bars])
         
         # --- Multi-Timeframe Logic (Internal Emulation) ---
         # If we have 200 bars of 1m, the last 60 bars represent 1 hour.
@@ -174,8 +175,19 @@ class Strategy:
         df['tr_stoch'] = df['stoch_k'].apply(lambda x: 1 if x < 20 else (-1 if x > 80 else 0))
         df['tr_ma'] = df.apply(lambda r: 1 if r['close'] > r['sma20'] and r['sma10'] > r['sma20'] else -1, axis=1)
         df['tech_rating'] = (df['tr_rsi'] + df['tr_macd'] + df['tr_stoch'] + df['tr_ma']) / 4.0
-        # --- TradingView Candlestick Patterns (64+) ---
+
+        # --- Candlestick Patterns ---
         df = CandlestickPatterns.detect_all(df)
+
+        # --- Chart Patterns ---
+        df = ChartPatterns.detect_all(df)
+
+        # --- Auto Trend Detector ---
+        # Find local peaks/troughs (support/resistance)
+        df['support'] = df['low'].rolling(window=20).min()
+        df['resistance'] = df['high'].rolling(window=20).max()
+        df['near_support'] = df['close'] < (df['support'] * 1.01)
+        df['near_resistance'] = df['close'] > (df['resistance'] * 0.99)
         
         return df
 
@@ -360,6 +372,18 @@ class Strategy:
             for p, bias in biases.items():
                 if last.get(p) and bias == "bullish":
                     return True, f"PATTERN: Bullish {p.replace('CP_', '')} detected", 0.8
+
+        # 26. Chart Patterns (TradingView All Chart)
+        if "CHART" in active:
+            biases = ChartPatterns.get_biases()
+            for p, bias in biases.items():
+                if last.get(p) and bias == "bullish":
+                    return True, f"CHART: Bullish {p.replace('CH_', '')} detected", 0.8
+        
+        # 27. Auto Trend Detector (Support Bounce)
+        if "AUTO_TREND" in active:
+            if last['near_support'] and last_candle_green:
+                return True, "AUTO_TREND: bounce off support level", 0.7
 
         # TIER 2: AGGRESSIVE (Taking chances for growth)
         if "AGGRESSIVE" in active:
@@ -558,6 +582,18 @@ class Strategy:
                 if last.get(p) and bias == "bearish":
                     return True, f"PATTERN: Bearish {p.replace('CP_', '')} detected", 0.8
 
+        # 26. Chart Patterns (TradingView All Chart)
+        if "CHART" in active:
+            biases = ChartPatterns.get_biases()
+            for p, bias in biases.items():
+                if last.get(p) and bias == "bearish":
+                    return True, f"CHART: Bearish {p.replace('CH_', '')} detected", 0.8
+        
+        # 27. Auto Trend Detector (Resistance Rejection)
+        if "AUTO_TREND" in active:
+            if last['near_resistance'] and last['close'] < prev['close']:
+                return True, "AUTO_TREND: rejection off resistance level", 0.7
+
         # Bearish Aggressive
         if "AGGRESSIVE" in active:
             aggressive_bearish = last['close'] < last['sma10'] and last['sma10'] < last['sma20']
@@ -575,6 +611,7 @@ class Strategy:
         sl_pct = (dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if dynamic_config else Config.STOP_LOSS_PCT) / 100.0
         tp_pct = (dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
         ts_pct = Config.TRAILING_STOP_PCT / 100.0 
+        ts_activation_pct = Config.TRAILING_STOP_ACTIVATION_PCT / 100.0
 
         # --- Dynamic Strategy Switch: Scalp vs. Hold ---
         is_strong_trend = False
@@ -598,9 +635,10 @@ class Strategy:
             # Stop loss - Only if not manual or if entry_price is set
             if entry_price > 0 and current_price <= entry_price * (1 - sl_pct):
                 return True, f"stop loss hit ({sl_pct*100:.2f}%)"
-            # Trailing stop - Always apply to manual trades
-            if ts_pct > 0 and high_since_entry:
-                if current_price <= high_since_entry * (1 - ts_pct):
+            # Trailing stop - Only once in enough profit
+            if ts_pct > 0 and high_since_entry and entry_price > 0:
+                is_activated = (high_since_entry >= entry_price * (1 + ts_activation_pct))
+                if is_activated and current_price <= high_since_entry * (1 - ts_pct):
                     return True, f"trailing stop hit (high: {high_since_entry:.2f})"
             # Take profit - Only if not manual or if entry_price is set
             if not is_manual and tp_pct > 0 and current_price >= entry_price * (1 + tp_pct):
@@ -611,8 +649,9 @@ class Strategy:
                 return True, f"short stop loss hit ({sl_pct*100:.2f}%)"
             # Trailing stop (low since entry)
             low_since_entry = high_since_entry
-            if ts_pct > 0 and low_since_entry:
-                if current_price >= low_since_entry * (1 + ts_pct):
+            if ts_pct > 0 and low_since_entry and entry_price > 0:
+                is_activated = (low_since_entry <= entry_price * (1 - ts_activation_pct))
+                if is_activated and current_price >= low_since_entry * (1 + ts_pct):
                     return True, f"short trailing stop hit (low: {low_since_entry:.2f})"
             # Take profit (price went DOWN)
             if not is_manual and tp_pct > 0 and current_price <= entry_price * (1 - tp_pct):
