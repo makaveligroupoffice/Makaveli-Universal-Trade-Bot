@@ -140,6 +140,37 @@ class MarketDataClient:
 
         return ((ask - bid) / mid) * 100.0
 
+    def get_market_regime(self, symbol: str = "SPY") -> tuple[str, float]:
+        """
+        Check overall market trend (Bullish/Bearish/Neutral) 
+        and return (regime, 30_min_return_pct).
+        """
+        bars = self.get_recent_bars(symbol, minutes=200)
+        if not bars:
+            return "UNKNOWN", 0.0
+        
+        import pandas as pd
+        df = pd.DataFrame([{"close": float(b.close)} for b in bars])
+        if len(df) < 50:
+            return "UNKNOWN", 0.0
+        
+        sma20 = df['close'].rolling(20).mean().iloc[-1]
+        sma50 = df['close'].rolling(50).mean().iloc[-1]
+        last_close = df['close'].iloc[-1]
+        
+        # 30-min return calculation
+        prev_30_close = df['close'].iloc[-31] if len(df) >= 31 else df['close'].iloc[0]
+        change_30m = ((last_close - prev_30_close) / prev_30_close) * 100.0
+
+        if last_close > sma20 and last_close > sma50:
+            regime = "BULLISH"
+        elif last_close < sma20 and last_close < sma50:
+            regime = "BEARISH"
+        else:
+            regime = "NEUTRAL"
+            
+        return regime, change_30m
+
     def get_option_latest_quote(self, symbol: str):
         """Fetch latest quote for an option symbol."""
         request = OptionLatestQuoteRequest(symbol_or_symbols=symbol)

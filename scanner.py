@@ -74,8 +74,9 @@ class Scanner:
 
     def _get_symbol_momentum(self, symbol: str) -> float | None:
         try:
-            bars = self.data.get_recent_bars(symbol, minutes=20)
-            if len(bars) < 10:
+            # Align with 30-min market regime return
+            bars = self.data.get_recent_bars(symbol, minutes=30)
+            if len(bars) < 15:
                 return None
 
             first_close = float(bars[0].close)
@@ -84,6 +85,9 @@ class Scanner:
 
             if first_close <= 0:
                 return None
+            
+            # 30-min momentum pct
+            momentum_pct = (last_close - first_close) / first_close
 
             # Loosen price filters for Bonds (they can be > $30)
             is_bond = symbol in BOND_UNIVERSE
@@ -95,7 +99,7 @@ class Scanner:
             if total_volume < self.min_total_volume:
                 return None
 
-            return (last_close - first_close) / first_close
+            return momentum_pct
         except (ValueError, TypeError, AttributeError):
             return None
 

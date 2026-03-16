@@ -605,6 +605,10 @@ class AutoTrader:
             log.info(f"Max open positions reached ({open_positions_count})")
             return
 
+        # 4.5. Market Regime Filter
+        market_regime, index_30m_return = self.data.get_market_regime("SPY")
+        log.info(f"Current Market Regime: {market_regime} | SPY 30m Change: {index_30m_return:.2f}%")
+
         ranked_candidates = self.scanner.get_ranked_candidates(self.dynamic_config)
         log.info(
             "Scanner ranked candidates: "
@@ -673,10 +677,40 @@ class AutoTrader:
             if not action:
                 continue
 
-            # Minimum Signal Strength Threshold to avoid weak setups
-            min_strength = 0.60 if action == "buy" else 0.65 # Lowered from 0.75/0.8 for more activity
-            if strength < min_strength:
-                log.info(f"Skipping {symbol}: {action} signal strength {strength} is below threshold {min_strength}")
+            # --- Expert Tuning: Market Regime & Relative Strength ---
+            symbol_30m_return = momentum * 100.0 # momentum is decimal change
+            relative_strength = symbol_30m_return - index_30m_return
+            
+            if market_regime == "BEARISH" and action == "buy":
+                log.info(f"Skipping {symbol}: BEARING market regime blocks long entries.")
+                continue
+            if market_regime == "BULLISH" and action == "short":
+                log.info(f"Skipping {symbol}: BULLISH market regime blocks short entries.")
+                continue
+            
+            # Relative Strength Filtering:
+            # Long: Symbol should be stronger than SPY
+            # Short: Symbol should be weaker than SPY
+            if action == "buy" and relative_strength < 0.2:
+                log.info(f"Skipping {symbol}: Weak relative strength ({relative_strength:.2f}%) vs SPY.")
+                continue
+            if action == "short" and relative_strength > -0.2:
+                log.info(f"Skipping {symbol}: Weak relative weakness ({relative_strength:.2f}%) vs SPY.")
+                continue
+                
+            # Increase threshold for NEUTRAL market to avoid chop
+            effective_min_strength = 0.70 if market_regime == "NEUTRAL" else 0.60
+            if action == "short":
+                effective_min_strength += 0.05 # Higher bar for shorts
+            
+            # 4.6. Time-Based Chop Zone Filter (9:30 - 10:30 AM EST)
+            # Increase strength requirements during high-volatility market open
+            if current_hhmm and 930 <= current_hhmm <= 1030:
+                effective_min_strength += 0.10
+                log.info(f"Market open 'Chop Zone' active. Minimum strength raised to {effective_min_strength}")
+                
+            if strength < effective_min_strength:
+                log.info(f"Skipping {symbol}: {action} signal strength {strength} is below effective threshold {effective_min_strength}")
                 continue
 
             # 3. AI Signal Verification (Final Check)
