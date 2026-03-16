@@ -42,7 +42,8 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
     - **Market Context Filtering**: The AI now reviews every trade against broader market indicators like **VIX** and **SPY** trends.
     - **AI Reasoning Logs**: Every decision the AI makes is logged to `logs/ai_reasoning.log`, providing multi-step logical justifications for every entry.
 - **Professional Investment Dashboard**:
-    - A real-time console (`dashboard.py`) that displays PnL, Win Rate, Projected Monthly Growth, and active positions with color-coded profit status.
+    - A real-time console (`dashboard.py`) and **Cyber-HUD Web Interface** (`app.py`) that displays PnL, Win Rate, and active positions.
+    - **Simple Download Feature**: Export your trade history to CSV or download the bot's source code as a ZIP directly from the web dashboard for easy deployment across devices.
 - **Autonomous 'DNA' Backups**: 
     - Automatically creates timestamped zip backups of your database, configuration, and strategy code during every nightly maintenance cycle.
 - **Distributed Auto-Updates**: If you share the code or run it on multiple machines, the bot can **automatically pull code updates from your GitHub repository** and apply them live via hot-reloading. This ensures all your instances are always running the latest evolved "DNA".

@@ -1,7 +1,10 @@
 import os
 import json
 import logging
-from flask import Flask, render_template, jsonify, send_from_directory
+import zipfile
+import io
+import csv
+from flask import Flask, render_template, jsonify, send_from_directory, send_file
 from flask_login import current_user
 from config import Config
 from broker_alpaca import AlpacaBroker
@@ -68,6 +71,69 @@ def get_stats():
         })
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/download/journal")
+def download_journal():
+    try:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Define columns we want in CSV
+        columns = ["timestamp", "event_type", "symbol", "qty", "filled_avg_price", "pnl", "reason"]
+        writer.writerow(columns)
+        
+        if os.path.exists(Config.TRADE_JOURNAL_FILE):
+            with open(Config.TRADE_JOURNAL_FILE, "r") as f:
+                for line in f:
+                    try:
+                        data = json.loads(line)
+                        row = [data.get(col, "") for col in columns]
+                        writer.writerow(row)
+                    except:
+                        continue
+        
+        output.seek(0)
+        return send_file(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name='trade_journal.csv'
+        )
+    except Exception as e:
+        logger.error(f"Error downloading journal: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/download/bot")
+def download_bot():
+    try:
+        memory_file = io.BytesIO()
+        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk('.'):
+                # Exclude folders
+                dirs[:] = [d for d in dirs if d not in [
+                    'logs', 'instance', '.git', '__pycache__', '.idea', '.junie', 'backups', 'node_modules'
+                ]]
+                
+                for file in files:
+                    # Exclude secrets, temporary files, and hidden files
+                    if file == '.env' or file.endswith('.pyc') or file == '.DS_Store' or file.startswith('.'):
+                        continue
+                    
+                    file_path = os.path.join(root, file)
+                    # Add to zip with relative path
+                    archive_name = os.path.relpath(file_path, '.')
+                    zf.write(file_path, archive_name)
+                    
+        memory_file.seek(0)
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='tradebot_source.zip'
+        )
+    except Exception as e:
+        logger.error(f"Error downloading bot source: {e}")
         return jsonify({"ok": False, "error": str(e)})
 
 if __name__ == "__main__":
