@@ -51,13 +51,128 @@ class Strategy:
         df['bb_upper'] = df['bb_mid'] + (df['bb_std'] * 2)
         df['bb_lower'] = df['bb_mid'] - (df['bb_std'] * 2)
         
-        # ATR
+        # Keltner Channels
+        df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
         df['tr'] = df.apply(lambda r: max(r['high'] - r['low'], abs(r['high'] - r['close']), abs(r['low'] - r['close'])), axis=1)
+        df['atr20'] = df['tr'].rolling(window=20).mean()
+        df['kc_upper'] = df['ema20'] + (df['atr20'] * 2)
+        df['kc_lower'] = df['ema20'] - (df['atr20'] * 2)
+
+        # ATR (standard 14 for other uses)
         df['atr14'] = df['tr'].rolling(window=14).mean()
+        
+        # --- Stochastic Slow ---
+        low14 = df['low'].rolling(window=14).min()
+        high14 = df['high'].rolling(window=14).max()
+        df['stoch_k'] = 100 * ((df['close'] - low14) / (high14 - low14))
+        df['stoch_d'] = df['stoch_k'].rolling(window=3).mean() # Slow Stochastic
+        
+        # --- Parabolic SAR (Simplified Loop) ---
+        psar = list(df['close'].iloc[:1]) * len(df)
+        bull = True
+        af = 0.02
+        ep = df['low'].iloc[0] if bull else df['high'].iloc[0]
+        
+        for i in range(1, len(df)):
+            prev_psar = psar[i-1]
+            if bull:
+                psar[i] = prev_psar + af * (ep - prev_psar)
+                if df['low'].iloc[i] < psar[i]:
+                    bull = False
+                    psar[i] = ep
+                    ep = df['low'].iloc[i]
+                    af = 0.02
+                else:
+                    if df['high'].iloc[i] > ep:
+                        ep = df['high'].iloc[i]
+                        af = min(af + 0.02, 0.2)
+                    # PSAR cannot be above the previous two lows
+                    psar[i] = min(psar[i], df['low'].iloc[i-1], df['low'].iloc[max(0, i-2)])
+            else:
+                psar[i] = prev_psar + af * (ep - prev_psar)
+                if df['high'].iloc[i] > psar[i]:
+                    bull = True
+                    psar[i] = ep
+                    ep = df['high'].iloc[i]
+                    af = 0.02
+                else:
+                    if df['low'].iloc[i] < ep:
+                        ep = df['low'].iloc[i]
+                        af = min(af + 0.02, 0.2)
+                    # PSAR cannot be below the previous two highs
+                    psar[i] = max(psar[i], df['high'].iloc[i-1], df['high'].iloc[max(0, i-2)])
+        df['psar'] = psar
+        df['psar_bull'] = (df['close'] > df['psar'])
+        
+        # --- Momentum ---
+        df['momentum'] = df['close'] - df['close'].shift(10)
+
+        # --- ADX ---
+        df['up_move'] = df['high'].diff()
+        df['down_move'] = df['low'].diff().abs()
+        df['plus_dm'] = df.apply(lambda r: r['up_move'] if r['up_move'] > r['down_move'] and r['up_move'] > 0 else 0, axis=1)
+        df['minus_dm'] = df.apply(lambda r: r['down_move'] if r['down_move'] > r['up_move'] and r['down_move'] > 0 else 0, axis=1)
+        
+        # TV uses RMA (Running Moving Average) for ADX/ATR, which is ewm(alpha=1/14)
+        alpha = 1/14
+        df['plus_di'] = 100 * (df['plus_dm'].ewm(alpha=alpha, adjust=False).mean() / df['atr14'])
+        df['minus_di'] = 100 * (df['minus_dm'].ewm(alpha=alpha, adjust=False).mean() / df['atr14'])
+        df['dx'] = 100 * (df['plus_di'] - df['minus_di']).abs() / (df['plus_di'] + df['minus_di'])
+        df['adx'] = df['dx'].ewm(alpha=alpha, adjust=False).mean()
         
         # --- Volume Indicators ---
         df['avg_volume20'] = df['volume'].rolling(20).mean()
         df['rvol'] = df['volume'] / df['avg_volume20']
+
+        # --- Supertrend ---
+        multiplier = 3.0
+        atr_period = 10
+        df['tr_st'] = df.apply(lambda r: max(r['high'] - r['low'], abs(r['high'] - r['close']), abs(r['low'] - r['close'])), axis=1)
+        df['atr_st'] = df['tr_st'].rolling(window=atr_period).mean()
+        df['hl2'] = (df['high'] + df['low']) / 2
+        df['upper_band'] = df['hl2'] + (multiplier * df['atr_st'])
+        df['lower_band'] = df['hl2'] - (multiplier * df['atr_st'])
+        
+        supertrend = [0.0] * len(df)
+        final_upper_band = [0.0] * len(df)
+        final_lower_band = [0.0] * len(df)
+        
+        for i in range(1, len(df)):
+            # Final Upper Band
+            if df['upper_band'].iloc[i] < final_upper_band[i-1] or df['close'].iloc[i-1] > final_upper_band[i-1]:
+                final_upper_band[i] = df['upper_band'].iloc[i]
+            else:
+                final_upper_band[i] = final_upper_band[i-1]
+            
+            # Final Lower Band
+            if df['lower_band'].iloc[i] > final_lower_band[i-1] or df['close'].iloc[i-1] < final_lower_band[i-1]:
+                final_lower_band[i] = df['lower_band'].iloc[i]
+            else:
+                final_lower_band[i] = final_lower_band[i-1]
+            
+            # Supertrend
+            if supertrend[i-1] == final_upper_band[i-1]:
+                if df['close'].iloc[i] > final_upper_band[i]:
+                    supertrend[i] = final_lower_band[i]
+                else:
+                    supertrend[i] = final_upper_band[i]
+            else:
+                if df['close'].iloc[i] < final_lower_band[i]:
+                    supertrend[i] = final_upper_band[i]
+                else:
+                    supertrend[i] = final_lower_band[i]
+        
+        df['supertrend'] = supertrend
+        df['supertrend_bull'] = (df['close'] > df['supertrend'])
+
+        # --- Technical Ratings (Simplified) ---
+        # Combine signals from RSI, MACD, Stoch, and MAs
+        # Buy = 1, Neutral = 0, Sell = -1
+        df['tr_rsi'] = df['rsi14'].apply(lambda x: 1 if x < 30 else (-1 if x > 70 else 0))
+        df['tr_macd'] = df['macd_hist'].apply(lambda x: 1 if x > 0 else -1)
+        df['tr_stoch'] = df['stoch_k'].apply(lambda x: 1 if x < 20 else (-1 if x > 80 else 0))
+        df['tr_ma'] = df.apply(lambda r: 1 if r['close'] > r['sma20'] and r['sma10'] > r['sma20'] else -1, axis=1)
+        df['tech_rating'] = (df['tr_rsi'] + df['tr_macd'] + df['tr_stoch'] + df['tr_ma']) / 4.0
         
         return df
 
@@ -125,6 +240,116 @@ class Strategy:
             # Expert Tuning: Require close above high + volume
             if last['close'] > highest_20 and volume_spike and last_candle_green:
                 return True, f"BREAKOUT: clear range breakout with volume (RVOL: {last['rvol']:.2f})", 0.8
+
+        # --- New TradingView Strategies ---
+
+        # 6. BarUpDn Strategy
+        if "BARUPDN" in active:
+            if last['close'] > last['open'] and prev['close'] > prev['open']:
+                return True, "BARUPDN: 2 consecutive green bars", 0.5
+
+        # 7. Bollinger Bands Directed (Trend + BB Reversal)
+        if "BOLLINGER_DIRECTED" in active:
+            if long_term_bullish and last['close'] < last['bb_lower'] and last_candle_green:
+                return True, "BOLLINGER_DIRECTED: trend-aligned lower band reversal", 0.8
+
+        # 8. Consecutive Up
+        if "CONSECUTIVE" in active:
+            if len(df) >= 4:
+                three_green = all(df['close'].iloc[-i] > df['open'].iloc[-i] for i in range(1, 4))
+                if three_green:
+                    return True, "CONSECUTIVE: 3 green bars in a row", 0.6
+
+        # 9. Greedy
+        if "GREEDY" in active:
+            if last['close'] > prev['close']:
+                return True, "GREEDY: close higher than previous close", 0.4
+
+        # 10. Inside Bar
+        if "INSIDE_BAR" in active:
+            # Check if previous bar was an inside bar and current broke out UP
+            if len(df) >= 3:
+                p2 = df.iloc[-3]
+                p1 = df.iloc[-2]
+                is_inside = p1['high'] < p2['high'] and p1['low'] > p2['low']
+                if is_inside and last['close'] > p1['high']:
+                    return True, "INSIDE_BAR: bullish breakout of inside bar", 0.7
+
+        # 11. Keltner Channels
+        if "KELTNER" in active:
+            if last['close'] < last['kc_lower'] and last_candle_green:
+                return True, "KELTNER: lower channel reversal", 0.7
+
+        # 12. Momentum Strategy
+        if "MOMENTUM" in active:
+            if last['momentum'] > 0 and prev['momentum'] <= 0:
+                return True, "MOMENTUM: positive crossover", 0.6
+
+        # 13. MovingAve2Line Cross (EMA 12/26)
+        if "MA_2LINE_CROSS" in active:
+            if last['ema12'] > last['ema26'] and prev['ema12'] <= prev['ema26']:
+                return True, "MA_2LINE_CROSS: EMA12/26 bullish crossover", 0.8
+
+        # 14. MovingAvg Cross (SMA 50/200)
+        if "MA_CROSS" in active:
+            if last['sma50'] > last['sma200'] and prev['sma50'] <= prev['sma200']:
+                return True, "MA_CROSS: SMA50/200 bullish crossover (Golden Cross)", 0.9
+
+        # 15. Outside Bar
+        if "OUTSIDE_BAR" in active:
+            if last['high'] > prev['high'] and last['low'] < prev['low'] and last_candle_green:
+                return True, "OUTSIDE_BAR: bullish outside bar", 0.6
+
+        # 16. Pivot Reversal
+        if "PIVOT_REVERSAL" in active:
+            low_left = df['low'].iloc[-3]
+            low_pivot = df['low'].iloc[-2]
+            low_right = df['low'].iloc[-1]
+            if low_pivot < low_left and low_pivot < low_right and last_candle_green:
+                return True, "PIVOT_REVERSAL: bullish pivot point reversal", 0.7
+
+        # 17. Price Channel (Donchian)
+        if "PRICE_CHANNEL" in active:
+            upper_20 = df['high'].rolling(20).max().iloc[-2]
+            if last['close'] > upper_20:
+                return True, "PRICE_CHANNEL: price broke above 20-period high", 0.7
+
+        # 18. Rob Booker - ADX Breakout
+        if "ROB_BOOKER_ADX" in active:
+            if last['adx'] > 25 and last['plus_di'] > last['minus_di'] and last['close'] > df['high'].rolling(10).max().iloc[-2]:
+                return True, "ROB_BOOKER_ADX: ADX > 25 breakout", 0.8
+
+        # 19. Stochastic Slow
+        if "STOCHASTIC" in active:
+            if last['stoch_k'] < 20 and last['stoch_k'] > last['stoch_d'] and prev['stoch_k'] <= prev['stoch_d']:
+                return True, "STOCHASTIC: oversold bullish crossover", 0.7
+
+        # 20. Parabolic SAR
+        if "PSAR" in active:
+            if last['psar_bull'] and not prev['psar_bull']:
+                return True, "PSAR: bullish flip", 0.7
+
+        # 21. Pivot Extension
+        if "PIVOT_EXTENSION" in active:
+            # Simple extension: price > pivot high of last 10 bars
+            pivot_high_10 = df['high'].rolling(10).max().iloc[-2]
+            if last['close'] > pivot_high_10:
+                return True, "PIVOT_EXTENSION: breakout above pivot high", 0.6
+
+        # 22. Supertrend
+        if "SUPERTREND" in active:
+            if last['supertrend_bull'] and not prev['supertrend_bull']:
+                return True, "SUPERTREND: bullish trend flip", 0.8
+
+        # 23. Technical Ratings
+        if "TECHNICAL_RATINGS" in active:
+            if last['tech_rating'] > 0.5:
+                return True, f"TECHNICAL_RATINGS: strong bullish rating ({last['tech_rating']:.2f})", 0.7
+
+        # 24. Volty Expan Close
+        if "VOLTY_EXPAN_CLOSE" in active:
+            if last['close'] > prev['close'] + 2.0 * prev['atr14']:
+                return True, "VOLTY_EXPAN_CLOSE: volatility expansion to the upside", 0.7
 
         # TIER 2: AGGRESSIVE (Taking chances for growth)
         if "AGGRESSIVE" in active:
@@ -207,6 +432,114 @@ class Strategy:
             lowest_20 = df['low'].rolling(20).min().iloc[-2]
             if last['close'] < lowest_20 and volume_spike:
                 return True, f"BREAKOUT: new 20-bar low with volume (RVOL: {last['rvol']:.2f})", 0.8
+
+        # --- New TradingView Strategies (Short) ---
+
+        # 6. BarUpDn Strategy
+        if "BARUPDN" in active:
+            if last['close'] < last['open'] and prev['close'] < prev['open']:
+                return True, "BARUPDN: 2 consecutive red bars", 0.5
+
+        # 7. Bollinger Bands Directed
+        if "BOLLINGER_DIRECTED" in active:
+            if long_term_bearish and last['close'] > last['bb_upper'] and last['close'] < prev['close']:
+                return True, "BOLLINGER_DIRECTED: trend-aligned upper band rejection", 0.8
+
+        # 8. Consecutive Down
+        if "CONSECUTIVE" in active:
+            if len(df) >= 4:
+                three_red = all(df['close'].iloc[-i] < df['open'].iloc[-i] for i in range(1, 4))
+                if three_red:
+                    return True, "CONSECUTIVE: 3 red bars in a row", 0.6
+
+        # 9. Greedy
+        if "GREEDY" in active:
+            if last['close'] < prev['close']:
+                return True, "GREEDY: close lower than previous close", 0.4
+
+        # 10. Inside Bar
+        if "INSIDE_BAR" in active:
+            if len(df) >= 3:
+                p2 = df.iloc[-3]
+                p1 = df.iloc[-2]
+                is_inside = p1['high'] < p2['high'] and p1['low'] > p2['low']
+                if is_inside and last['close'] < p1['low']:
+                    return True, "INSIDE_BAR: bearish breakout of inside bar", 0.7
+
+        # 11. Keltner Channels
+        if "KELTNER" in active:
+            if last['close'] > last['kc_upper'] and last['close'] < prev['close']:
+                return True, "KELTNER: upper channel reversal", 0.7
+
+        # 12. Momentum Strategy
+        if "MOMENTUM" in active:
+            if last['momentum'] < 0 and prev['momentum'] >= 0:
+                return True, "MOMENTUM: negative crossover", 0.6
+
+        # 13. MovingAve2Line Cross
+        if "MA_2LINE_CROSS" in active:
+            if last['ema12'] < last['ema26'] and prev['ema12'] >= prev['ema26']:
+                return True, "MA_2LINE_CROSS: EMA12/26 bearish crossover", 0.8
+
+        # 14. MovingAvg Cross
+        if "MA_CROSS" in active:
+            if last['sma50'] < last['sma200'] and prev['sma50'] >= prev['sma200']:
+                return True, "MA_CROSS: SMA50/200 bearish crossover (Death Cross)", 0.9
+
+        # 15. Outside Bar
+        if "OUTSIDE_BAR" in active:
+            if last['high'] > prev['high'] and last['low'] < prev['low'] and last['close'] < prev['close']:
+                return True, "OUTSIDE_BAR: bearish outside bar", 0.6
+
+        # 16. Pivot Reversal
+        if "PIVOT_REVERSAL" in active:
+            high_left = df['high'].iloc[-3]
+            high_pivot = df['high'].iloc[-2]
+            high_right = df['high'].iloc[-1]
+            if high_pivot > high_left and high_pivot > high_right and last['close'] < prev['close']:
+                return True, "PIVOT_REVERSAL: bearish pivot point reversal", 0.7
+
+        # 17. Price Channel
+        if "PRICE_CHANNEL" in active:
+            lower_20 = df['low'].rolling(20).min().iloc[-2]
+            if last['close'] < lower_20:
+                return True, "PRICE_CHANNEL: price broke below 20-period low", 0.7
+
+        # 18. Rob Booker - ADX Breakout
+        if "ROB_BOOKER_ADX" in active:
+            if last['adx'] > 25 and last['minus_di'] > last['plus_di'] and last['close'] < df['low'].rolling(10).min().iloc[-2]:
+                return True, "ROB_BOOKER_ADX: ADX > 25 bearish breakout", 0.8
+
+        # 19. Stochastic Slow
+        if "STOCHASTIC" in active:
+            if last['stoch_k'] > 80 and last['stoch_k'] < last['stoch_d'] and prev['stoch_k'] >= prev['stoch_d']:
+                return True, "STOCHASTIC: overbought bearish crossover", 0.7
+
+        # 20. Parabolic SAR
+        if "PSAR" in active:
+            if not last['psar_bull'] and prev['psar_bull']:
+                return True, "PSAR: bearish flip", 0.7
+
+        # 21. Pivot Extension
+        if "PIVOT_EXTENSION" in active:
+            pivot_low_10 = df['low'].rolling(10).min().iloc[-2]
+            if last['close'] < pivot_low_10:
+                return True, "PIVOT_EXTENSION: breakout below pivot low", 0.6
+
+        # 22. Supertrend
+        if "SUPERTREND" in active:
+            if not last['supertrend_bull'] and prev['supertrend_bull']:
+                return True, "SUPERTREND: bearish trend flip", 0.8
+
+        # 23. Technical Ratings
+        if "TECHNICAL_RATINGS" in active:
+            if last['tech_rating'] < -0.5:
+                return True, f"TECHNICAL_RATINGS: strong bearish rating ({last['tech_rating']:.2f})", 0.7
+
+        # 24. Volty Expan Close
+        if "VOLTY_EXPAN_CLOSE" in active:
+            if last['close'] < prev['close'] - 2.0 * prev['atr14']:
+                return True, "VOLTY_EXPAN_CLOSE: volatility expansion to the downside", 0.7
 
         # Bearish Aggressive
         if "AGGRESSIVE" in active:

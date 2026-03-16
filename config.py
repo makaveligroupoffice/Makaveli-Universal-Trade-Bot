@@ -86,11 +86,12 @@ class Config:
     ENABLE_NEWS_FILTER: bool = os.getenv("ENABLE_NEWS_FILTER", "true").lower() == "true"
     
     # Multi-Strategy Selection
-    # Comma-separated list of strategies to enable:
-    # TREND, RSI, BOLLINGER, MACD, BREAKOUT, AGGRESSIVE
+    # Supported: TREND, RSI, BOLLINGER, MACD, BREAKOUT, BARUPDN, BOLLINGER_DIRECTED, CONSECUTIVE, 
+    # GREEDY, INSIDE_BAR, KELTNER, MOMENTUM, MA_2LINE_CROSS, MA_CROSS, OUTSIDE_BAR, PIVOT_REVERSAL, 
+    # PRICE_CHANNEL, ROB_BOOKER_ADX, STOCHASTIC, SUPERTREND, TECHNICAL_RATINGS, VOLTY_EXPAN_CLOSE, AGGRESSIVE
     ACTIVE_STRATEGIES: tuple[str, ...] = tuple(
         s.strip().upper()
-        for s in os.getenv("ACTIVE_STRATEGIES", "TREND,RSI,BOLLINGER,MACD,BREAKOUT,AGGRESSIVE").split(",")
+        for s in os.getenv("ACTIVE_STRATEGIES", "TREND,RSI,BOLLINGER,MACD,BREAKOUT,MA_CROSS,STOCHASTIC").split(",")
         if s.strip()
     )
 
