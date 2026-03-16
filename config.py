@@ -45,8 +45,8 @@ class Config:
     BACKUP_DIR: str = os.getenv("BACKUP_DIR", "backups")
 
     # Trading window (local machine time)
-    ALLOWED_START_HHMM: str = os.getenv("ALLOWED_START_HHMM", "0935")
-    ALLOWED_END_HHMM: str = os.getenv("ALLOWED_END_HHMM", "1530")
+    ALLOWED_START_HHMM: str = os.getenv("ALLOWED_START_HHMM", "0930")
+    ALLOWED_END_HHMM: str = os.getenv("ALLOWED_END_HHMM", "1600")
 
     # Logs / state
     LOG_DIR: str = os.getenv("LOG_DIR", "logs")
