@@ -214,8 +214,19 @@ class Strategy:
         # Base filters
         volatility_excessive = last['atr14'] > (last['close'] * 0.03) 
         last_candle_green = last['close'] > prev['close']
+        
+        # Determine if we are in After-Hours for stricter filtering
+        from datetime import datetime
+        now_hhmm = int(datetime.now().strftime("%H%M"))
+        is_after_hours = now_hhmm > 1600 or now_hhmm < 930
+
+        # Stricter Relative Position for AH (Top 15% instead of 20%)
+        min_close_relative = 0.85 if is_after_hours else 0.8
         close_relative_pos = (last['close'] - last['low']) / (last['high'] - last['low']) if (last['high'] - last['low']) > 0 else 0
-        volume_spike = last['rvol'] > (dynamic_config.get("min_rvol", 1.8) if dynamic_config else 1.8)
+        
+        # Stricter RVOL for AH (3.0 instead of 1.8)
+        min_rvol_base = 3.0 if is_after_hours else 1.8
+        volume_spike = last['rvol'] > (dynamic_config.get("min_rvol", min_rvol_base) if dynamic_config else min_rvol_base)
 
         # 1. FAMILY: TREND
         trend_match = False
@@ -226,7 +237,7 @@ class Strategy:
             sniper_stack = sniper_stack and last['sma20'] > last['sma50']
 
         if "TREND" in active:
-            if long_term_bullish and hourly_trend_bullish and sniper_stack and last_candle_green and close_relative_pos >= 0.8:
+            if long_term_bullish and hourly_trend_bullish and sniper_stack and last_candle_green and close_relative_pos >= min_close_relative:
                 matches.append("TREND_SNIPER")
                 strength_score += 0.5
                 trend_match = True
@@ -368,8 +379,19 @@ class Strategy:
         # Base filters
         volatility_excessive = last['atr14'] > (last['close'] * 0.03)
         last_candle_red = last['close'] < prev['close']
+        
+        # Determine if we are in After-Hours for stricter filtering
+        from datetime import datetime
+        now_hhmm = int(datetime.now().strftime("%H%M"))
+        is_after_hours = now_hhmm > 1600 or now_hhmm < 930
+        
+        # Stricter Relative Position for AH (Bottom 15% instead of 20%)
+        min_close_relative = 0.85 if is_after_hours else 0.8
         close_relative_pos = (last['high'] - last['close']) / (last['high'] - last['low']) if (last['high'] - last['low']) > 0 else 0
-        volume_spike = last['rvol'] > (dynamic_config.get("min_rvol", 1.8) if dynamic_config else 1.8)
+        
+        # Stricter RVOL for AH (3.0 instead of 1.8)
+        min_rvol_base = 3.0 if is_after_hours else 1.8
+        volume_spike = last['rvol'] > (dynamic_config.get("min_rvol", min_rvol_base) if dynamic_config else min_rvol_base)
 
         # 1. FAMILY: TREND
         trend_match = False
@@ -380,7 +402,7 @@ class Strategy:
             sniper_bearish_stack = sniper_bearish_stack and last['sma20'] < last['sma50']
 
         if "TREND" in active:
-            if long_term_bearish and hourly_trend_bearish and sniper_bearish_stack and last_candle_red and close_relative_pos >= 0.8:
+            if long_term_bearish and hourly_trend_bearish and sniper_bearish_stack and last_candle_red and close_relative_pos >= min_close_relative:
                 matches.append("SNIPER_SHORT")
                 strength_score += 0.5
                 trend_match = True

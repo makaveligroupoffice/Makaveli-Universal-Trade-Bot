@@ -46,7 +46,7 @@ class Config:
 
     # Trading window (local machine time)
     ALLOWED_START_HHMM: str = os.getenv("ALLOWED_START_HHMM", "0930")
-    ALLOWED_END_HHMM: str = os.getenv("ALLOWED_END_HHMM", "1600")
+    ALLOWED_END_HHMM: str = os.getenv("ALLOWED_END_HHMM", "2000")
 
     # Logs / state
     LOG_DIR: str = os.getenv("LOG_DIR", "logs")
@@ -66,7 +66,7 @@ class Config:
     TV_SCREENER_LIMIT: int = int(os.getenv("TV_SCREENER_LIMIT", "20"))
 
     # Strategy controls
-    ENABLE_EXTENDED_HOURS: bool = os.getenv("ENABLE_EXTENDED_HOURS", "false").lower() == "true"
+    ENABLE_EXTENDED_HOURS: bool = os.getenv("ENABLE_EXTENDED_HOURS", "true").lower() == "true"
     ENABLE_INTERNET_RESEARCH: bool = os.getenv("ENABLE_INTERNET_RESEARCH", "true").lower() == "true"
     RESEARCH_INTERVAL_SECONDS: int = int(os.getenv("RESEARCH_INTERVAL_SECONDS", "86400")) # 24 hours
     ENABLE_NEW_ENTRIES: bool = os.getenv("ENABLE_NEW_ENTRIES", "true").lower() == "true"

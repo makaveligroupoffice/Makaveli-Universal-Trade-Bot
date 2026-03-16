@@ -1006,10 +1006,40 @@ class AutoTrader:
                         # Retry in 10 minutes if failed
                         last_log_submission = time.time() - Config.SUBMIT_LOGS_EVERY_SECONDS + 600
 
+                # End of session logic (8:30 PM local time)
+                report_time_hhmm = 2030
+                if current_hhmm is not None and current_hhmm >= report_time_hhmm:
+                    # We check if we already sent today's report
+                    if self.summary_date != datetime.now().strftime("%Y-%m-%d"):
+                        self.summary_date = datetime.now().strftime("%Y-%m-%d") # Reset for next day
+                        
+                        summary = self.risk.get_daily_summary()
+                        pnl = summary.get("daily_pnl", 0.0)
+                        trades = summary.get("trades_count", 0)
+                        bot_id = self.user.username if self.user else os.getenv("USER", "bot_user")
+                        msg = f"Trading day + Extended Session complete for {bot_id}. Final Daily PnL: ${pnl:.2f} | Trades: {trades}."
+                        log.info(msg)
+                        send_notification(msg, title="Daily Performance Report Triggered")
+
+                        # Final Daily Report
+                        try:
+                            self._send_daily_report()
+                        except Exception as e:
+                            log.error(f"Daily report failed: {e}")
+
+                        # Run Nightly Research before maintenance
+                        try:
+                            self.researcher.perform_internet_research()
+                            # Also perform backup after research
+                            self.backup_mgr.create_backup()
+                        except Exception as e:
+                            log.error(f"Nightly Research or Backup failed: {e}")
+
                 if self._should_shutdown_for_day():
                     summary = self.risk.get_daily_summary()
                     pnl = summary.get("daily_pnl", 0.0)
                     trades = summary.get("trades_count", 0)
+                    bot_id = self.user.username if self.user else os.getenv("USER", "bot_user")
                     msg = f"Trading day complete for {bot_id}. Final Daily PnL: ${pnl:.2f} | Trades: {trades}. Shutting down."
                     log.info(msg)
                     send_notification(msg, title="Bot Shutdown")
