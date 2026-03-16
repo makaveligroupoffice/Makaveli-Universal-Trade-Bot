@@ -811,6 +811,18 @@ class AutoTrader:
 
         while True:
             try:
+                # Check global enable switch
+                try:
+                    state_raw = self.state_store.load()
+                    if not state_raw.get("enabled", True):
+                        # If disabled, we still want to keep the UI informed and handle exits for safety,
+                        # but we skip everything else.
+                        self.sync_state()
+                        time.sleep(10)
+                        continue
+                except Exception as e:
+                    log.error(f"Error checking enabled status: {e}")
+
                 # Periodic Auto-Update check (every 1 hour)
                 if Config.ENABLE_AUTO_UPDATE and time.time() - last_update_check > 3600 and not single_cycle:
                     try:

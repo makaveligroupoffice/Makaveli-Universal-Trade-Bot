@@ -67,10 +67,29 @@ def get_stats():
             "trades_today": risk_state.get("trades_today", 0),
             "equity": equity,
             "operational_state": bot_state.get("operational_state", "SCANNING"),
+            "bot_enabled": bot_state.get("enabled", True),
             "positions": pos_data
         })
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/bot/toggle", methods=["POST"])
+def toggle_bot():
+    try:
+        from bot_state import BotStateStore
+        store = BotStateStore(Config.BOT_STATE_FILE)
+        state = store.load()
+        
+        # Invert current state
+        new_status = not state.get("enabled", True)
+        state["enabled"] = new_status
+        store.save(state)
+        
+        logger.info(f"Bot {'ENABLED' if new_status else 'DISABLED'} via Web HUD")
+        return jsonify({"ok": True, "enabled": new_status})
+    except Exception as e:
+        logger.error(f"Error toggling bot: {e}")
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/download/journal")

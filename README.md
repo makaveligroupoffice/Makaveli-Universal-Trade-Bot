@@ -101,7 +101,9 @@ MAX_DAILY_LOSS_PCT=5.0
 
 #### Desktop & Mobile Usage
 
-1.  **Start the Web Dashboard & Webhook Server:**
+1.  **Mobile-Controllable Interface:** The Cyber-HUD now allows you to **Start and Stop the Trading Engine** directly from your phone. Simply toggle the "Bot Active" switch in the mobile web dashboard to pause or resume market scanning and execution.
+
+2.  **Start the Web Dashboard & Webhook Server:**
     ```bash
     python3 app.py
     ```

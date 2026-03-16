@@ -24,6 +24,24 @@ function updateStats() {
                 document.getElementById('tradeCount').innerText = data.trades_today;
                 document.getElementById('system-time').innerText = `LAST SYNC: ${new Date().toLocaleTimeString()}`;
 
+                // Update Bot Engine Toggle UI
+                const isEnabled = data.bot_enabled;
+                const toggleLabel = document.getElementById('botToggleLabel');
+                const toggleBtn = document.getElementById('botToggleButton');
+                const toggleKnob = document.getElementById('botToggleKnob');
+                
+                if (isEnabled) {
+                    toggleLabel.innerText = 'BOT ACTIVE';
+                    toggleLabel.className = 'text-xs font-bold text-green-400 uppercase';
+                    toggleBtn.className = 'p-2 w-16 h-8 rounded-full border border-green-400 bg-green-900 bg-opacity-20 flex items-center justify-start transition-all duration-300 overflow-hidden';
+                    toggleKnob.className = 'w-6 h-6 rounded-full bg-green-400 shadow-[0_0_5px_#0f0] transform translate-x-0 transition-transform duration-300';
+                } else {
+                    toggleLabel.innerText = 'BOT STOPPED';
+                    toggleLabel.className = 'text-xs font-bold text-red-500 uppercase';
+                    toggleBtn.className = 'p-2 w-16 h-8 rounded-full border border-red-500 bg-red-900 bg-opacity-20 flex items-center justify-end transition-all duration-300 overflow-hidden';
+                    toggleKnob.className = 'w-6 h-6 rounded-full bg-red-500 shadow-[0_0_5px_#f00] transform translate-x-0 transition-transform duration-300';
+                }
+
                 // Update Positions
                 const posContainer = document.getElementById('positionList');
                 if (data.positions.length > 0) {
@@ -52,6 +70,22 @@ function triggerAction(action) {
         log.innerHTML += `> SERVER: ${data.message || data.error}<br>`;
         log.scrollTop = log.scrollHeight;
     });
+}
+
+function toggleBot() {
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> TOGGLING BOT ENGINE...<br>`;
+    fetch('/api/bot/toggle', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                log.innerHTML += `> SERVER: BOT IS NOW ${data.enabled ? 'ACTIVE' : 'STOPPED'}<br>`;
+                updateStats(); // Refresh UI immediately
+            } else {
+                log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+            }
+            log.scrollTop = log.scrollHeight;
+        });
 }
 
 // BOT ANIMATION (Ported from Tkinter to Web Canvas)

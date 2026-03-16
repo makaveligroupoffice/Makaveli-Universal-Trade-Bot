@@ -13,6 +13,7 @@ class BotStateStore:
     @staticmethod
     def default_state() -> dict:
         return {
+            "enabled": True,  # Global toggle for the trading engine
             "positions": {},  # symbol -> {entry_price, high_since_entry, side}
             "pending_orders": {},  # order_id -> {symbol, side, submitted_at}
             "last_order_statuses": {}, # order_id -> status
