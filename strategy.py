@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 
 from config import Config
+from candlestick_patterns import CandlestickPatterns
 
 
 class Strategy:
@@ -173,6 +174,8 @@ class Strategy:
         df['tr_stoch'] = df['stoch_k'].apply(lambda x: 1 if x < 20 else (-1 if x > 80 else 0))
         df['tr_ma'] = df.apply(lambda r: 1 if r['close'] > r['sma20'] and r['sma10'] > r['sma20'] else -1, axis=1)
         df['tech_rating'] = (df['tr_rsi'] + df['tr_macd'] + df['tr_stoch'] + df['tr_ma']) / 4.0
+        # --- TradingView Candlestick Patterns (64+) ---
+        df = CandlestickPatterns.detect_all(df)
         
         return df
 
@@ -350,6 +353,13 @@ class Strategy:
         if "VOLTY_EXPAN_CLOSE" in active:
             if last['close'] > prev['close'] + 2.0 * prev['atr14']:
                 return True, "VOLTY_EXPAN_CLOSE: volatility expansion to the upside", 0.7
+
+        # 25. Candlestick Patterns (TradingView All 64)
+        if "PATTERNS" in active:
+            biases = CandlestickPatterns.get_biases()
+            for p, bias in biases.items():
+                if last.get(p) and bias == "bullish":
+                    return True, f"PATTERN: Bullish {p.replace('CP_', '')} detected", 0.8
 
         # TIER 2: AGGRESSIVE (Taking chances for growth)
         if "AGGRESSIVE" in active:
@@ -540,6 +550,13 @@ class Strategy:
         if "VOLTY_EXPAN_CLOSE" in active:
             if last['close'] < prev['close'] - 2.0 * prev['atr14']:
                 return True, "VOLTY_EXPAN_CLOSE: volatility expansion to the downside", 0.7
+
+        # 25. Candlestick Patterns (TradingView All 64)
+        if "PATTERNS" in active:
+            biases = CandlestickPatterns.get_biases()
+            for p, bias in biases.items():
+                if last.get(p) and bias == "bearish":
+                    return True, f"PATTERN: Bearish {p.replace('CP_', '')} detected", 0.8
 
         # Bearish Aggressive
         if "AGGRESSIVE" in active:
