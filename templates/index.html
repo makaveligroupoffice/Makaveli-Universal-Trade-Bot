@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TradeBot Cyber-HUD</title>
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#000000">
+    <link rel="apple-touch-icon" href="/static/img/icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #000; color: #0f0; font-family: 'Courier New', Courier, monospace; overflow-x: hidden; }
+        .cyber-panel { border: 1px solid #0f0; box-shadow: 0 0 10px #0f0; }
+        .glitch-text { text-shadow: 2px 0 #f0f, -2px 0 #0ff; animation: glitch 1s infinite linear alternate-reverse; }
+        @keyframes glitch { 0% { transform: translate(0); } 20% { transform: translate(-2px, 2px); } 40% { transform: translate(-2px, -2px); } 60% { transform: translate(2px, 2px); } 80% { transform: translate(2px, -2px); } 100% { transform: translate(0); } }
+        canvas { background: black; display: block; margin: 0 auto; max-width: 100%; height: auto; }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-md mx-auto">
+        <!-- Dashboard Header -->
+        <div class="mb-4 text-center">
+            <h1 class="text-2xl font-bold glitch-text uppercase tracking-widest">TradeBot Cyber-HUD</h1>
+            <p id="system-time" class="text-xs mt-1">SYNCING...</p>
+        </div>
+
+        <!-- Cyber-Bot Mobile HUD (Canvas) -->
+        <div class="cyber-panel rounded-lg mb-6 p-2 relative overflow-hidden bg-black">
+            <canvas id="botCanvas" width="400" height="400"></canvas>
+            <div id="chestMonitor" class="absolute top-[230px] left-1/2 transform -translate-x-1/2 text-[10px] font-bold">SCAN</div>
+        </div>
+
+        <!-- Real-Time Stats -->
+        <div class="grid grid-cols-2 gap-4 mb-6 text-sm">
+            <div class="cyber-panel p-3 rounded text-center">
+                <div class="text-gray-500 uppercase text-[10px]">Daily PnL</div>
+                <div id="dailyPnl" class="text-xl font-bold text-white">$0.00</div>
+            </div>
+            <div class="cyber-panel p-3 rounded text-center">
+                <div class="text-gray-500 uppercase text-[10px]">Status</div>
+                <div id="botStatus" class="text-xl font-bold text-green-400">SCANNING</div>
+            </div>
+            <div class="cyber-panel p-3 rounded text-center">
+                <div class="text-gray-500 uppercase text-[10px]">Equity</div>
+                <div id="accountEquity" class="text-lg font-bold text-white">$---</div>
+            </div>
+            <div class="cyber-panel p-3 rounded text-center">
+                <div class="text-gray-500 uppercase text-[10px]">Trades</div>
+                <div id="tradeCount" class="text-lg font-bold text-white">0</div>
+            </div>
+        </div>
+
+        <!-- Active Symbols / Positions -->
+        <div class="cyber-panel p-4 rounded-lg mb-6">
+            <h2 class="text-xs uppercase text-gray-500 mb-2 border-b border-gray-800 pb-1">Open Positions</h2>
+            <div id="positionList" class="space-y-2 text-xs">
+                <p class="italic text-gray-600">No active positions.</p>
+            </div>
+        </div>
+
+        <!-- Mobile Controls -->
+        <div class="grid grid-cols-2 gap-4">
+            <button onclick="triggerAction('status')" class="cyber-panel bg-green-900 bg-opacity-20 hover:bg-opacity-40 p-3 rounded uppercase font-bold text-xs transition-all">Report Status</button>
+            <button onclick="triggerAction('scan')" class="cyber-panel bg-blue-900 bg-opacity-20 hover:bg-opacity-40 p-3 rounded uppercase font-bold text-xs transition-all">Manual Scan</button>
+        </div>
+
+        <!-- Log/Activity Feed -->
+        <div class="mt-8 text-[9px] text-gray-600 font-mono h-24 overflow-y-auto" id="logFeed">
+            > INITIALIZING MOBILE INTERFACE...<br>
+            > SYNCING WITH BOT ENGINE...<br>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register("{{ url_for('static', filename='sw.js') }}");
+        }
+    </script>
+</body>
+</html>

@@ -4,6 +4,7 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
 
 ## Key Features
 
+- **Multi-Platform Design (PWA)**: The bot now includes a **Cyber-HUD Web Interface** that works on **Desktop and Mobile**. You can "download" the interface to your iOS or Android home screen for one-tap access to your trading dashboard.
 - **Universal Strategy Execution**: Can handle **Long/Short Stocks**, **Bonds** (via ETFs like TLT, BND, AGG), **Options** (Calls, Puts, Spreads, Multi-legged), and **Cryptocurrencies**.
 - **Sniper & Aggressive Modes**: Multi-tier entry logic that targets a **75%+ success rate** on high-conviction "Slam Dunk" trades while taking calculated chances for rapid growth.
 - **Multi-Strategy Engine**: Simultaneous execution of 6 core strategy families:
@@ -96,27 +97,30 @@ MAX_DAILY_LOSS_PCT=5.0
 ```
 
 ### 4. Running the Bot
-Open three separate terminals:
 
-**Terminal 1 (Server):**
-```bash
-python3 webhook_server.py
-```
+#### Desktop & Mobile Usage
 
-**Terminal 2 (Runner):**
-```bash
-python3 bot_runner.py
-```
+1.  **Start the Web Dashboard & Webhook Server:**
+    ```bash
+    python3 app.py
+    ```
+    *This runs the central API, authentication system, and the mobile-responsive Cyber-HUD.*
 
-**Terminal 3 (Dashboard):**
-```bash
-python3 dashboard.py
-```
+2.  **Start the Trading Engine (Brain):**
+    ```bash
+    python3 bot_runner.py
+    ```
+    *This processes the strategies and executes trades.*
 
-**Terminal 4 (Tunnel):**
-```bash
-ngrok http 5000
-```
+3.  **Expose to Mobile (via ngrok):**
+    ```bash
+    ngrok http 5000
+    ```
+    *Open the resulting `https://...` URL on your phone's browser. You will be prompted to "Add to Home Screen" for a native app experience.*
+
+#### Additional Tools
+- **Dashboard (Console):** `python3 dashboard.py` for a high-performance terminal view.
+- **Manual Trade (CLI):** `python3 remote_trade.py buy AAPL 10`
 
 ## Sending a Trade Signal
 Once your ngrok tunnel is up, you can send a trade signal using the provided tool:
