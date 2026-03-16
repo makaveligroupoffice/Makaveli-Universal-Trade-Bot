@@ -833,7 +833,12 @@ class AutoTrader:
             # 1. Partial TP Rules (Dollar based)
             exit_qty = qty
             if not should_exit:
-                if side == "short" and pnl_dollars >= Config.SHORT_EXIT_PROFIT_DOLLARS:
+                # Last-hour greed reduction: if within 30 mins of close, take ANY profit
+                if minutes_to_close <= 30 and pnl_dollars > 1.00:
+                    should_exit = True
+                    exit_reason = f"EOD_PROFIT_TAKE (PnL: ${pnl_dollars:.2f})"
+                    exit_qty = qty
+                elif side == "short" and pnl_dollars >= Config.SHORT_EXIT_PROFIT_DOLLARS:
                     should_exit = True
                     exit_reason = f"SHORT_TP_REACHED_{Config.SHORT_EXIT_PROFIT_DOLLARS}_DOLLARS (PnL: ${pnl_dollars:.2f})"
                     exit_qty = qty
