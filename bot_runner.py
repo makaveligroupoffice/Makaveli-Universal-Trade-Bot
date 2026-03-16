@@ -216,14 +216,23 @@ class AutoTrader:
             return 0.0
         return time.time() - float(start_ts)
 
-    def _calc_qty(self, price: float, symbol: str, signal_strength: float = 1.0) -> float:
+    def _calc_qty(self, price: float, symbol: str, signal_strength: float = 1.0, indicators: dict | None = None) -> float:
         if price <= 0:
             return 0.0
 
         is_crypto = "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"])
         
-        sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT)) / 100.0
-        risk_per_share = price * sl_pct
+        # --- Volatility-Adjusted Stop Loss (ATR) ---
+        atr = indicators.get("atr14") if indicators else None
+        if atr and atr > 0:
+            # Position Size = (Account Risk Amount) / (Stop Loss Distance)
+            # Stop Loss Distance = ATR * Multiplier
+            risk_per_share = atr * Config.ATR_MULTIPLIER
+            log.info(f"Using ATR-based risk for {symbol}: ATR={atr:.4f}, SL_Dist={risk_per_share:.4f} ({Config.ATR_MULTIPLIER}x)")
+        else:
+            sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT)) / 100.0
+            risk_per_share = price * sl_pct
+            
         if risk_per_share <= 0:
             return 0.0
 
@@ -241,11 +250,24 @@ class AutoTrader:
             # Adjust based on learning engine history if available
             if perf.get("count", 0) >= 5:
                 # Real data available for this symbol
-                # This is simplified; real logic would track win_rate and avg_win/avg_loss
+                # Calculate simple historical win rate
+                # (This would be more robust in a real implementation)
                 pass 
                 
+            # Scale Kelly based on signal strength
             kelly_pct = self.risk.calculate_kelly_size(win_rate, win_loss_ratio, equity)
             risk_amount = equity * kelly_pct
+            
+            # Volatility Scaling: Reduce risk if current ATR is high relative to price
+            if Config.VOL_SCALING_ENABLED and atr:
+                # Relative Volatility = ATR / Price
+                rel_vol = atr / price
+                # If rel_vol > 2%, start scaling down
+                if rel_vol > 0.02:
+                    scale_factor = 0.02 / rel_vol
+                    risk_amount *= (scale_factor * Config.VOL_SCALING_FACTOR)
+                    log.info(f"Volatility scaling applied to {symbol}: {scale_factor:.2f}x multiplier")
+
             log.info(f"Kelly sizing for {symbol}: {kelly_pct*100:.2f}% risk (${risk_amount:.2f})")
 
         # Scale risk based on signal strength (Tiered Aggression)
@@ -630,20 +652,23 @@ class AutoTrader:
                         log.info(f"Skipping {symbol}: AI detected bearish sentiment ({sentiment_score:.2f})")
                         continue
 
-            should_buy, buy_reason, buy_strength = self.strategy.should_buy(bars, self.dynamic_config)
-            should_short, short_reason, short_strength = self.strategy.should_short(bars, self.dynamic_config)
+            should_buy, buy_reason, buy_strength, buy_indicators = self.strategy.should_buy(bars, self.dynamic_config)
+            should_short, short_reason, short_strength, short_indicators = self.strategy.should_short(bars, self.dynamic_config)
             
             action = None
             reason = None
             strength = 0.0
+            last_indicators = {}
             if should_buy:
                 action = "buy"
                 reason = buy_reason
                 strength = buy_strength
+                last_indicators = buy_indicators
             elif should_short:
                 action = "short"
                 reason = short_reason
                 strength = short_strength
+                last_indicators = short_indicators
             
             if not action:
                 continue
@@ -667,7 +692,7 @@ class AutoTrader:
             if not latest_price or latest_price <= 0:
                 continue
 
-            qty = self._calc_qty(latest_price, symbol, signal_strength=strength)
+            qty = self._calc_qty(latest_price, symbol, signal_strength=strength, indicators=last_indicators)
             if qty <= 0:
                 continue
 

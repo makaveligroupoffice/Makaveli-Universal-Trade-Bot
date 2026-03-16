@@ -192,15 +192,16 @@ class Strategy:
         return df
 
     @staticmethod
-    def should_buy(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float]:
+    def should_buy(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float, dict]:
         """
-        Returns (should_buy, reason, signal_strength)
+        Returns (should_buy, reason, signal_strength, indicators)
         """
         df = Strategy._calculate_indicators(bars)
         if df is None:
-            return False, "not enough bars", 0.0
+            return False, "not enough bars", 0.0, {}
 
         last = df.iloc[-1]
+        last_indicators = last.to_dict()
         prev = df.iloc[-2]
         
         # Strategy Family: Trend Following / Breakout / Momentum
@@ -231,54 +232,54 @@ class Strategy:
         # 1. Trend Following Strategy (Sniper Logic)
         if "TREND" in active:
             if long_term_bullish and hourly_trend_bullish and sniper_stack and candle_quality and last['rvol'] > 2.2 and not volatility_excessive:
-                return True, f"TREND/SNIPER: perfect stack + top-tier candle + extreme RVOL ({last['rvol']:.2f})", 1.0
+                return True, f"TREND/SNIPER: perfect stack + top-tier candle + extreme RVOL ({last['rvol']:.2f})", 1.0, last_indicators
 
         # 2. RSI Trading Strategy (Mean Reversion / Overbought-Oversold)
         if "RSI" in active:
             # Expert Tuning: Require candle confirmation for mean reversion
             if last['rsi14'] < 25 and last_candle_green and close_relative_pos > 0.5:
-                return True, f"RSI: deep oversold bounce (RSI: {last['rsi14']:.2f})", 0.7
+                return True, f"RSI: deep oversold bounce (RSI: {last['rsi14']:.2f})", 0.7, last_indicators
 
         # 3. Bollinger Bands Strategy (Mean Reversion)
         if "BOLLINGER" in active:
             if last['close'] < last['bb_lower'] and last_candle_green:
-                 return True, "BOLLINGER: lower band reversal", 0.7
+                 return True, "BOLLINGER: lower band reversal", 0.7, last_indicators
 
         # 4. MACD Divergence Strategy (Momentum Reversal)
         if "MACD" in active:
             if last['macd_hist'] > 0 and prev['macd_hist'] <= 0 and last_candle_green:
-                return True, f"MACD: bullish crossover (hist: {last['macd_hist']:.4f})", 0.7
+                return True, f"MACD: bullish crossover (hist: {last['macd_hist']:.4f})", 0.7, last_indicators
 
         # 5. Breakout Trading Strategy (Range Breakout)
         if "BREAKOUT" in active:
             highest_20 = df['high'].rolling(20).max().iloc[-2]
             # Expert Tuning: Require close above high + volume
             if last['close'] > highest_20 and volume_spike and last_candle_green:
-                return True, f"BREAKOUT: clear range breakout with volume (RVOL: {last['rvol']:.2f})", 0.8
+                return True, f"BREAKOUT: clear range breakout with volume (RVOL: {last['rvol']:.2f})", 0.8, last_indicators
 
         # --- New TradingView Strategies ---
 
         # 6. BarUpDn Strategy
         if "BARUPDN" in active:
             if last['close'] > last['open'] and prev['close'] > prev['open']:
-                return True, "BARUPDN: 2 consecutive green bars", 0.5
+                return True, "BARUPDN: 2 consecutive green bars", 0.5, last_indicators
 
         # 7. Bollinger Bands Directed (Trend + BB Reversal)
         if "BOLLINGER_DIRECTED" in active:
             if long_term_bullish and last['close'] < last['bb_lower'] and last_candle_green:
-                return True, "BOLLINGER_DIRECTED: trend-aligned lower band reversal", 0.8
+                return True, "BOLLINGER_DIRECTED: trend-aligned lower band reversal", 0.8, last_indicators
 
         # 8. Consecutive Up
         if "CONSECUTIVE" in active:
             if len(df) >= 4:
                 three_green = all(df['close'].iloc[-i] > df['open'].iloc[-i] for i in range(1, 4))
                 if three_green:
-                    return True, "CONSECUTIVE: 3 green bars in a row", 0.6
+                    return True, "CONSECUTIVE: 3 green bars in a row", 0.6, last_indicators
 
         # 9. Greedy
         if "GREEDY" in active:
             if last['close'] > prev['close']:
-                return True, "GREEDY: close higher than previous close", 0.4
+                return True, "GREEDY: close higher than previous close", 0.4, last_indicators
 
         # 10. Inside Bar
         if "INSIDE_BAR" in active:
@@ -288,32 +289,32 @@ class Strategy:
                 p1 = df.iloc[-2]
                 is_inside = p1['high'] < p2['high'] and p1['low'] > p2['low']
                 if is_inside and last['close'] > p1['high']:
-                    return True, "INSIDE_BAR: bullish breakout of inside bar", 0.7
+                    return True, "INSIDE_BAR: bullish breakout of inside bar", 0.7, last_indicators
 
         # 11. Keltner Channels
         if "KELTNER" in active:
             if last['close'] < last['kc_lower'] and last_candle_green:
-                return True, "KELTNER: lower channel reversal", 0.7
+                return True, "KELTNER: lower channel reversal", 0.7, last_indicators
 
         # 12. Momentum Strategy
         if "MOMENTUM" in active:
             if last['momentum'] > 0 and prev['momentum'] <= 0:
-                return True, "MOMENTUM: positive crossover", 0.6
+                return True, "MOMENTUM: positive crossover", 0.6, last_indicators
 
         # 13. MovingAve2Line Cross (EMA 12/26)
         if "MA_2LINE_CROSS" in active:
             if last['ema12'] > last['ema26'] and prev['ema12'] <= prev['ema26']:
-                return True, "MA_2LINE_CROSS: EMA12/26 bullish crossover", 0.8
+                return True, "MA_2LINE_CROSS: EMA12/26 bullish crossover", 0.8, last_indicators
 
         # 14. MovingAvg Cross (SMA 50/200)
         if "MA_CROSS" in active:
             if last['sma50'] > last['sma200'] and prev['sma50'] <= prev['sma200']:
-                return True, "MA_CROSS: SMA50/200 bullish crossover (Golden Cross)", 0.9
+                return True, "MA_CROSS: SMA50/200 bullish crossover (Golden Cross)", 0.9, last_indicators
 
         # 15. Outside Bar
         if "OUTSIDE_BAR" in active:
             if last['high'] > prev['high'] and last['low'] < prev['low'] and last_candle_green:
-                return True, "OUTSIDE_BAR: bullish outside bar", 0.6
+                return True, "OUTSIDE_BAR: bullish outside bar", 0.6, last_indicators
 
         # 16. Pivot Reversal
         if "PIVOT_REVERSAL" in active:
@@ -321,69 +322,69 @@ class Strategy:
             low_pivot = df['low'].iloc[-2]
             low_right = df['low'].iloc[-1]
             if low_pivot < low_left and low_pivot < low_right and last_candle_green:
-                return True, "PIVOT_REVERSAL: bullish pivot point reversal", 0.7
+                return True, "PIVOT_REVERSAL: bullish pivot point reversal", 0.7, last_indicators
 
         # 17. Price Channel (Donchian)
         if "PRICE_CHANNEL" in active:
             upper_20 = df['high'].rolling(20).max().iloc[-2]
             if last['close'] > upper_20:
-                return True, "PRICE_CHANNEL: price broke above 20-period high", 0.7
+                return True, "PRICE_CHANNEL: price broke above 20-period high", 0.7, last_indicators
 
         # 18. Rob Booker - ADX Breakout
         if "ROB_BOOKER_ADX" in active:
             if last['adx'] > 25 and last['plus_di'] > last['minus_di'] and last['close'] > df['high'].rolling(10).max().iloc[-2]:
-                return True, "ROB_BOOKER_ADX: ADX > 25 breakout", 0.8
+                return True, "ROB_BOOKER_ADX: ADX > 25 breakout", 0.8, last_indicators
 
         # 19. Stochastic Slow
         if "STOCHASTIC" in active:
             if last['stoch_k'] < 20 and last['stoch_k'] > last['stoch_d'] and prev['stoch_k'] <= prev['stoch_d']:
-                return True, "STOCHASTIC: oversold bullish crossover", 0.7
+                return True, "STOCHASTIC: oversold bullish crossover", 0.7, last_indicators
 
         # 20. Parabolic SAR
         if "PSAR" in active:
             if last['psar_bull'] and not prev['psar_bull']:
-                return True, "PSAR: bullish flip", 0.7
+                return True, "PSAR: bullish flip", 0.7, last_indicators
 
         # 21. Pivot Extension
         if "PIVOT_EXTENSION" in active:
             # Simple extension: price > pivot high of last 10 bars
             pivot_high_10 = df['high'].rolling(10).max().iloc[-2]
             if last['close'] > pivot_high_10:
-                return True, "PIVOT_EXTENSION: breakout above pivot high", 0.6
+                return True, "PIVOT_EXTENSION: breakout above pivot high", 0.6, last_indicators
 
         # 22. Supertrend
         if "SUPERTREND" in active:
             if last['supertrend_bull'] and not prev['supertrend_bull']:
-                return True, "SUPERTREND: bullish trend flip", 0.8
+                return True, "SUPERTREND: bullish trend flip", 0.8, last_indicators
 
         # 23. Technical Ratings
         if "TECHNICAL_RATINGS" in active:
             if last['tech_rating'] > 0.5:
-                return True, f"TECHNICAL_RATINGS: strong bullish rating ({last['tech_rating']:.2f})", 0.7
+                return True, f"TECHNICAL_RATINGS: strong bullish rating ({last['tech_rating']:.2f})", 0.7, last_indicators
 
         # 24. Volty Expan Close
         if "VOLTY_EXPAN_CLOSE" in active:
             if last['close'] > prev['close'] + 2.0 * prev['atr14']:
-                return True, "VOLTY_EXPAN_CLOSE: volatility expansion to the upside", 0.7
+                return True, "VOLTY_EXPAN_CLOSE: volatility expansion to the upside", 0.7, last_indicators
 
         # 25. Candlestick Patterns (TradingView All 64)
         if "PATTERNS" in active:
             biases = CandlestickPatterns.get_biases()
             for p, bias in biases.items():
                 if last.get(p) and bias == "bullish":
-                    return True, f"PATTERN: Bullish {p.replace('CP_', '')} detected", 0.8
+                    return True, f"PATTERN: Bullish {p.replace('CP_', '')} detected", 0.8, last_indicators
 
         # 26. Chart Patterns (TradingView All Chart)
         if "CHART" in active:
             biases = ChartPatterns.get_biases()
             for p, bias in biases.items():
                 if last.get(p) and bias == "bullish":
-                    return True, f"CHART: Bullish {p.replace('CH_', '')} detected", 0.8
+                    return True, f"CHART: Bullish {p.replace('CH_', '')} detected", 0.8, last_indicators
         
         # 27. Auto Trend Detector (Support Bounce)
         if "AUTO_TREND" in active:
             if last['near_support'] and last_candle_green:
-                return True, "AUTO_TREND: bounce off support level", 0.7
+                return True, "AUTO_TREND: bounce off support level", 0.7, last_indicators
 
         # TIER 2: AGGRESSIVE (Taking chances for growth)
         if "AGGRESSIVE" in active:
@@ -391,9 +392,9 @@ class Strategy:
             # Targeting 10x growth via volume-backed momentum
             aggressive_trend = last['close'] > last['sma10'] and last['sma10'] > last['sma20']
             if aggressive_trend and last_candle_green and close_relative_pos >= 0.7 and last['rvol'] > 1.8 and not volatility_excessive:
-                return True, f"AGGRESSIVE: momentum play (RVOL: {last['rvol']:.2f})", 0.6
+                return True, f"AGGRESSIVE: momentum play (RVOL: {last['rvol']:.2f})", 0.6, last_indicators
 
-        return False, "failed all entry tiers", 0.0
+        return False, "failed all entry tiers", 0.0, last_indicators
 
     @staticmethod
     def is_news_safe(symbol: str, market_data_client, news_list: list | None = None) -> bool:
@@ -415,15 +416,16 @@ class Strategy:
         return True
 
     @staticmethod
-    def should_short(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float]:
+    def should_short(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float, dict]:
         """
-        Returns (should_short, reason, signal_strength)
+        Returns (should_short, reason, signal_strength, indicators)
         """
         df = Strategy._calculate_indicators(bars)
         if df is None:
-            return False, "not enough bars", 0.0
+            return False, "not enough bars", 0.0, {}
 
         last = df.iloc[-1]
+        last_indicators = last.to_dict()
         prev = df.iloc[-2]
         
         long_term_bearish = last['close'] < last['sma200']
@@ -444,52 +446,52 @@ class Strategy:
                 sniper_bearish_stack = last['close'] < last['sma10'] < last['sma20'] < last['sma50']
 
             if long_term_bearish and sniper_bearish_stack and last_candle_red and close_relative_pos >= 0.8 and last['rvol'] > 2.2 and not volatility_excessive:
-                return True, f"SNIPER SHORT: trend + high-quality candle + extreme RVOL ({last['rvol']:.2f})", 1.0
+                return True, f"SNIPER SHORT: trend + high-quality candle + extreme RVOL ({last['rvol']:.2f})", 1.0, last_indicators
 
         # 2. RSI Overbought (Mean Reversion)
         if "RSI" in active:
             if last['rsi14'] > 70 and last['close'] < prev['close']:
-                return True, f"RSI: overbought reversal (RSI: {last['rsi14']:.2f})", 0.7
+                return True, f"RSI: overbought reversal (RSI: {last['rsi14']:.2f})", 0.7, last_indicators
 
         # 3. Bollinger Bands Upper Reversal
         if "BOLLINGER" in active:
             if last['close'] > last['bb_upper'] and last['close'] < prev['close']:
-                return True, "BOLLINGER: upper band rejection", 0.7
+                return True, "BOLLINGER: upper band rejection", 0.7, last_indicators
 
         # 4. MACD Bearish Crossover
         if "MACD" in active:
             if last['macd_hist'] < 0 and prev['macd_hist'] >= 0:
-                return True, f"MACD: bearish crossover (hist: {last['macd_hist']:.4f})", 0.7
+                return True, f"MACD: bearish crossover (hist: {last['macd_hist']:.4f})", 0.7, last_indicators
 
         # 5. Breakout Trading Strategy (Bearish Breakout)
         if "BREAKOUT" in active:
             lowest_20 = df['low'].rolling(20).min().iloc[-2]
             if last['close'] < lowest_20 and volume_spike:
-                return True, f"BREAKOUT: new 20-bar low with volume (RVOL: {last['rvol']:.2f})", 0.8
+                return True, f"BREAKOUT: new 20-bar low with volume (RVOL: {last['rvol']:.2f})", 0.8, last_indicators
 
         # --- New TradingView Strategies (Short) ---
 
         # 6. BarUpDn Strategy
         if "BARUPDN" in active:
             if last['close'] < last['open'] and prev['close'] < prev['open']:
-                return True, "BARUPDN: 2 consecutive red bars", 0.5
+                return True, "BARUPDN: 2 consecutive red bars", 0.5, last_indicators
 
         # 7. Bollinger Bands Directed
         if "BOLLINGER_DIRECTED" in active:
             if long_term_bearish and last['close'] > last['bb_upper'] and last['close'] < prev['close']:
-                return True, "BOLLINGER_DIRECTED: trend-aligned upper band rejection", 0.8
+                return True, "BOLLINGER_DIRECTED: trend-aligned upper band rejection", 0.8, last_indicators
 
         # 8. Consecutive Down
         if "CONSECUTIVE" in active:
             if len(df) >= 4:
                 three_red = all(df['close'].iloc[-i] < df['open'].iloc[-i] for i in range(1, 4))
                 if three_red:
-                    return True, "CONSECUTIVE: 3 red bars in a row", 0.6
+                    return True, "CONSECUTIVE: 3 red bars in a row", 0.6, last_indicators
 
         # 9. Greedy
         if "GREEDY" in active:
             if last['close'] < prev['close']:
-                return True, "GREEDY: close lower than previous close", 0.4
+                return True, "GREEDY: close lower than previous close", 0.4, last_indicators
 
         # 10. Inside Bar
         if "INSIDE_BAR" in active:
@@ -498,32 +500,32 @@ class Strategy:
                 p1 = df.iloc[-2]
                 is_inside = p1['high'] < p2['high'] and p1['low'] > p2['low']
                 if is_inside and last['close'] < p1['low']:
-                    return True, "INSIDE_BAR: bearish breakout of inside bar", 0.7
+                    return True, "INSIDE_BAR: bearish breakout of inside bar", 0.7, last_indicators
 
         # 11. Keltner Channels
         if "KELTNER" in active:
             if last['close'] > last['kc_upper'] and last['close'] < prev['close']:
-                return True, "KELTNER: upper channel reversal", 0.7
+                return True, "KELTNER: upper channel reversal", 0.7, last_indicators
 
         # 12. Momentum Strategy
         if "MOMENTUM" in active:
             if last['momentum'] < 0 and prev['momentum'] >= 0:
-                return True, "MOMENTUM: negative crossover", 0.6
+                return True, "MOMENTUM: negative crossover", 0.6, last_indicators
 
         # 13. MovingAve2Line Cross
         if "MA_2LINE_CROSS" in active:
             if last['ema12'] < last['ema26'] and prev['ema12'] >= prev['ema26']:
-                return True, "MA_2LINE_CROSS: EMA12/26 bearish crossover", 0.8
+                return True, "MA_2LINE_CROSS: EMA12/26 bearish crossover", 0.8, last_indicators
 
         # 14. MovingAvg Cross
         if "MA_CROSS" in active:
             if last['sma50'] < last['sma200'] and prev['sma50'] >= prev['sma200']:
-                return True, "MA_CROSS: SMA50/200 bearish crossover (Death Cross)", 0.9
+                return True, "MA_CROSS: SMA50/200 bearish crossover (Death Cross)", 0.9, last_indicators
 
         # 15. Outside Bar
         if "OUTSIDE_BAR" in active:
             if last['high'] > prev['high'] and last['low'] < prev['low'] and last['close'] < prev['close']:
-                return True, "OUTSIDE_BAR: bearish outside bar", 0.6
+                return True, "OUTSIDE_BAR: bearish outside bar", 0.6, last_indicators
 
         # 16. Pivot Reversal
         if "PIVOT_REVERSAL" in active:
@@ -531,76 +533,76 @@ class Strategy:
             high_pivot = df['high'].iloc[-2]
             high_right = df['high'].iloc[-1]
             if high_pivot > high_left and high_pivot > high_right and last['close'] < prev['close']:
-                return True, "PIVOT_REVERSAL: bearish pivot point reversal", 0.7
+                return True, "PIVOT_REVERSAL: bearish pivot point reversal", 0.7, last_indicators
 
         # 17. Price Channel
         if "PRICE_CHANNEL" in active:
             lower_20 = df['low'].rolling(20).min().iloc[-2]
             if last['close'] < lower_20:
-                return True, "PRICE_CHANNEL: price broke below 20-period low", 0.7
+                return True, "PRICE_CHANNEL: price broke below 20-period low", 0.7, last_indicators
 
         # 18. Rob Booker - ADX Breakout
         if "ROB_BOOKER_ADX" in active:
             if last['adx'] > 25 and last['minus_di'] > last['plus_di'] and last['close'] < df['low'].rolling(10).min().iloc[-2]:
-                return True, "ROB_BOOKER_ADX: ADX > 25 bearish breakout", 0.8
+                return True, "ROB_BOOKER_ADX: ADX > 25 bearish breakout", 0.8, last_indicators
 
         # 19. Stochastic Slow
         if "STOCHASTIC" in active:
             if last['stoch_k'] > 80 and last['stoch_k'] < last['stoch_d'] and prev['stoch_k'] >= prev['stoch_d']:
-                return True, "STOCHASTIC: overbought bearish crossover", 0.7
+                return True, "STOCHASTIC: overbought bearish crossover", 0.7, last_indicators
 
         # 20. Parabolic SAR
         if "PSAR" in active:
             if not last['psar_bull'] and prev['psar_bull']:
-                return True, "PSAR: bearish flip", 0.7
+                return True, "PSAR: bearish flip", 0.7, last_indicators
 
         # 21. Pivot Extension
         if "PIVOT_EXTENSION" in active:
             pivot_low_10 = df['low'].rolling(10).min().iloc[-2]
             if last['close'] < pivot_low_10:
-                return True, "PIVOT_EXTENSION: breakout below pivot low", 0.6
+                return True, "PIVOT_EXTENSION: breakout below pivot low", 0.6, last_indicators
 
         # 22. Supertrend
         if "SUPERTREND" in active:
             if not last['supertrend_bull'] and prev['supertrend_bull']:
-                return True, "SUPERTREND: bearish trend flip", 0.8
+                return True, "SUPERTREND: bearish trend flip", 0.8, last_indicators
 
         # 23. Technical Ratings
         if "TECHNICAL_RATINGS" in active:
             if last['tech_rating'] < -0.5:
-                return True, f"TECHNICAL_RATINGS: strong bearish rating ({last['tech_rating']:.2f})", 0.7
+                return True, f"TECHNICAL_RATINGS: strong bearish rating ({last['tech_rating']:.2f})", 0.7, last_indicators
 
         # 24. Volty Expan Close
         if "VOLTY_EXPAN_CLOSE" in active:
             if last['close'] < prev['close'] - 2.0 * prev['atr14']:
-                return True, "VOLTY_EXPAN_CLOSE: volatility expansion to the downside", 0.7
+                return True, "VOLTY_EXPAN_CLOSE: volatility expansion to the downside", 0.7, last_indicators
 
         # 25. Candlestick Patterns (TradingView All 64)
         if "PATTERNS" in active:
             biases = CandlestickPatterns.get_biases()
             for p, bias in biases.items():
                 if last.get(p) and bias == "bearish":
-                    return True, f"PATTERN: Bearish {p.replace('CP_', '')} detected", 0.8
+                    return True, f"PATTERN: Bearish {p.replace('CP_', '')} detected", 0.8, last_indicators
 
         # 26. Chart Patterns (TradingView All Chart)
         if "CHART" in active:
             biases = ChartPatterns.get_biases()
             for p, bias in biases.items():
                 if last.get(p) and bias == "bearish":
-                    return True, f"CHART: Bearish {p.replace('CH_', '')} detected", 0.8
+                    return True, f"CHART: Bearish {p.replace('CH_', '')} detected", 0.8, last_indicators
         
         # 27. Auto Trend Detector (Resistance Rejection)
         if "AUTO_TREND" in active:
             if last['near_resistance'] and last['close'] < prev['close']:
-                return True, "AUTO_TREND: rejection off resistance level", 0.7
+                return True, "AUTO_TREND: rejection off resistance level", 0.7, last_indicators
 
         # Bearish Aggressive
         if "AGGRESSIVE" in active:
             aggressive_bearish = last['close'] < last['sma10'] and last['sma10'] < last['sma20']
             if aggressive_bearish and last_candle_red and close_relative_pos >= 0.7 and last['rvol'] > 1.8 and not volatility_excessive:
-                return True, f"AGGRESSIVE SHORT: momentum play (RVOL: {last['rvol']:.2f})", 0.6
+                return True, f"AGGRESSIVE SHORT: momentum play (RVOL: {last['rvol']:.2f})", 0.6, last_indicators
 
-        return False, "failed all entry tiers", 0.0
+        return False, "failed all entry tiers", 0.0, last_indicators
 
     @staticmethod
     def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None, is_manual: bool = False) -> tuple[bool, str]:

@@ -28,6 +28,12 @@ class Config:
     MAX_TRADES_PER_DAY: int = int(os.getenv("MAX_TRADES_PER_DAY", "3"))
     MAX_OPEN_POSITIONS: int = int(os.getenv("MAX_OPEN_POSITIONS", "5"))
     MAX_POSITION_VALUE_DOLLARS: float = float(os.getenv("MAX_POSITION_VALUE_DOLLARS", "100.00"))
+    
+    # Volatility and Dynamic Risk Settings
+    ATR_MULTIPLIER: float = float(os.getenv("ATR_MULTIPLIER", "2.0"))
+    VOL_SCALING_ENABLED: bool = os.getenv("VOL_SCALING_ENABLED", "True").lower() == "true"
+    VOL_SCALING_FACTOR: float = float(os.getenv("VOL_SCALING_FACTOR", "1.0")) # 1.0 = normal, < 1.0 = more conservative
+    KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.5"))
     MAX_ACCOUNT_DEPLOYMENT_PCT: float = float(os.getenv("MAX_ACCOUNT_DEPLOYMENT_PCT", "25.0"))
     
     # Portfolio Diversification

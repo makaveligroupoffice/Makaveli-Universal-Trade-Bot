@@ -34,7 +34,9 @@ class MarketResearcher:
             # Very simple backtest simulation
             for i in range(20, len(bars) - 20):
                 window = bars[i-20:i]
-                should_buy, _ = Strategy.should_buy(window, self.dynamic_config)
+                # Modified to handle new 4-tuple return from strategy
+                signal_res = Strategy.should_buy(window, self.dynamic_config)
+                should_buy = signal_res[0]
                 
                 if should_buy:
                     entry_price = float(bars[i].open)
