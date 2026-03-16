@@ -81,6 +81,10 @@ class Config:
     TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "3.0")) # Increased from 2.5
     TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.5")) # Enabled by default
 
+    # Partial Take Profit Controls (Dollar based)
+    PARTIAL_TP1_DOLLARS: float = float(os.getenv("PARTIAL_TP1_DOLLARS", "10.00"))
+    PARTIAL_TP2_DOLLARS: float = float(os.getenv("PARTIAL_TP2_DOLLARS", "15.00"))
+
     # Advanced Portfolio Management
     KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.5"))
     ENABLE_NEWS_FILTER: bool = os.getenv("ENABLE_NEWS_FILTER", "true").lower() == "true"
@@ -88,10 +92,10 @@ class Config:
     # Multi-Strategy Selection
     # Supported: TREND, RSI, BOLLINGER, MACD, BREAKOUT, BARUPDN, BOLLINGER_DIRECTED, CONSECUTIVE, 
     # GREEDY, INSIDE_BAR, KELTNER, MOMENTUM, MA_2LINE_CROSS, MA_CROSS, OUTSIDE_BAR, PIVOT_REVERSAL, 
-    # PRICE_CHANNEL, ROB_BOOKER_ADX, STOCHASTIC, SUPERTREND, TECHNICAL_RATINGS, VOLTY_EXPAN_CLOSE, AGGRESSIVE, PATTERNS
+    # PRICE_CHANNEL, ROB_BOOKER_ADX, STOCHASTIC, SUPERTREND, TECHNICAL_RATINGS, VOLTY_EXPAN_CLOSE, AGGRESSIVE, PATTERNS, CHART, AUTO_TREND
     ACTIVE_STRATEGIES: tuple[str, ...] = tuple(
         s.strip().upper()
-        for s in os.getenv("ACTIVE_STRATEGIES", "TREND,RSI,BOLLINGER,MACD,BREAKOUT,MA_CROSS,STOCHASTIC,PATTERNS").split(",")
+        for s in os.getenv("ACTIVE_STRATEGIES", "TREND,RSI,BOLLINGER,MACD,BREAKOUT,MA_CROSS,STOCHASTIC,PATTERNS,CHART,AUTO_TREND").split(",")
         if s.strip()
     )
 

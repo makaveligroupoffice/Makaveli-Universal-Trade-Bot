@@ -384,7 +384,8 @@ class AutoTrader:
                     "entry_price": avg_entry,
                     "high_since_entry": avg_entry,
                     "side": side,
-                    "manual": True
+                    "manual": True,
+                    "sold_half": False
                 }
                 log.info(f"Adopted existing position | symbol={symbol} side={side} qty={qty}")
                 send_notification(f"Bot is now monitoring your manual {side} position in {symbol} at ${avg_entry:.2f}", title="Manual Trade Adopted")
@@ -463,7 +464,8 @@ class AutoTrader:
                     self.state["positions"][symbol] = {
                         "entry_price": filled_avg_price,
                         "high_since_entry": filled_avg_price,
-                        "side": side_info
+                        "side": side_info,
+                        "sold_half": False
                     }
                     msg = f"{side_info.upper()} filled | {symbol} | Price: ${filled_avg_price:.2f} | Qty: {filled_qty}"
                     log.info(msg)
@@ -498,13 +500,18 @@ class AutoTrader:
                     )
                     self._bump_summary("sells_filled" if side_info == "sell" else "buys_filled")
                     self.risk.record_trade(pnl, symbol=symbol, is_entry=False)
-                    if symbol in self.state["positions"]:
-                        del self.state["positions"][symbol]
+                    # Only clear position if it was NOT a partial exit
+                    if not self.pending_orders[oid].get("is_partial", False):
+                        if symbol in self.state["positions"]:
+                            del self.state["positions"][symbol]
 
                 self._clear_pending_order(oid)
             
             elif status in {"canceled", "expired", "rejected", "stopped", "suspended"}:
                 log.warning(f"Pending order {oid} failed with status: {status}")
+                if self.pending_orders[oid].get("is_partial", False):
+                    if symbol in self.state["positions"]:
+                        self.state["positions"][symbol]["sold_half"] = False
                 self.trade_journal.record("order_failed", {"order_id": oid, "status": status, "symbol": symbol})
                 self._bump_summary("order_failures")
                 self._clear_pending_order(oid)
@@ -742,33 +749,67 @@ class AutoTrader:
                     pos_info["high_since_entry"] = latest_price
             self._save_state()
 
+            pos_info["sold_half"] = pos_info.get("sold_half", False) # Ensure key exists
             is_manual = pos_info.get("manual", False)
-            should_exit, exit_reason = self.strategy.should_sell(
-                pos_info["entry_price"], 
-                latest_price, 
-                bars, 
-                high_since_entry=pos_info["high_since_entry"],
-                side=side,
-                dynamic_config=self.dynamic_config,
-                is_manual=is_manual
-            )
+            
+            entry_price = pos_info.get("entry_price", 0)
+            pnl_dollars = 0
+            if entry_price > 0:
+                if side == "buy":
+                    pnl_dollars = (latest_price - entry_price) * qty
+                else: # short
+                    pnl_dollars = (entry_price - latest_price) * qty
+
+            # 1. Partial TP Rules (Dollar based)
+            exit_qty = qty
+            if pnl_dollars >= Config.PARTIAL_TP2_DOLLARS:
+                should_exit = True
+                exit_reason = f"TP_REACHED_{Config.PARTIAL_TP2_DOLLARS}_DOLLARS (PnL: ${pnl_dollars:.2f})"
+                exit_qty = qty
+            elif pnl_dollars >= Config.PARTIAL_TP1_DOLLARS and not pos_info.get("sold_half", False):
+                should_exit = True
+                exit_reason = f"TP_REACHED_{Config.PARTIAL_TP1_DOLLARS}_DOLLARS_PARTIAL (PnL: ${pnl_dollars:.2f})"
+                exit_qty = max(1, int(qty / 2))
+                pos_info["sold_half"] = True
+                self._save_state()
+            else:
+                # 2. Standard Exit Rules (should_sell)
+                should_exit, exit_reason = self.strategy.should_sell(
+                    entry_price, 
+                    latest_price, 
+                    bars, 
+                    high_since_entry=pos_info["high_since_entry"],
+                    side=side,
+                    dynamic_config=self.dynamic_config,
+                    is_manual=is_manual
+                )
+                exit_qty = qty
+
+            is_partial = (exit_qty < qty)
 
             if not should_exit:
                 continue
 
             try:
-                # Exit with Market Order to ensure execution (Stop Loss/Emergency)
-                # When not explicitly using limit orders, or if it's an emergency, Market is safer.
+                # Exit with Market Order to ensure execution
                 limit_price = None
-                
                 action = "sell" if side == "buy" else "cover"
-                order = self.broker.sell_all(symbol, limit_price=limit_price)
+                
+                if exit_qty >= qty:
+                    order = self.broker.sell_all(symbol, limit_price=limit_price)
+                else:
+                    # Partial exit
+                    if action == "sell":
+                        order = self.broker.sell(symbol, exit_qty, limit_price=limit_price)
+                    else:
+                        order = self.broker.cover(symbol, exit_qty, limit_price=limit_price)
                 
                 oid = str(getattr(order, "id", None))
                 self.state["pending_orders"][oid] = {
                     "symbol": symbol,
                     "side": action,
-                    "submitted_at": self._now_ts()
+                    "submitted_at": self._now_ts(),
+                    "is_partial": is_partial
                 }
                 self._save_state()
 
@@ -787,6 +828,9 @@ class AutoTrader:
                 send_notification(msg, title=f"Trade Bot {action.upper()}")
             except Exception as e:
                 self._record_failure(f"Exit failed for {symbol}", e)
+                if is_partial:
+                    pos_info["sold_half"] = False
+                self._save_state()
 
     def run(self, single_cycle: bool = False):
         if not single_cycle:
