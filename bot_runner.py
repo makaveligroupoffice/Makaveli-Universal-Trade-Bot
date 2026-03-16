@@ -781,9 +781,20 @@ class AutoTrader:
         if not self._market_is_open():
             return
 
+        minutes_to_close = self._minutes_to_close()
         for symbol, pos_info in list(self.positions.items()):
+            # 0. EOD Force Liquidation
+            should_exit = False
+            exit_reason = ""
+            
+            if Config.INTRA_DAY_MODE_ONLY and minutes_to_close <= Config.MARKET_CLOSE_LIQUIDATION_WINDOW_MINS:
+                # Check if it's marked as long-term (we don't have this yet, but we'll exclude those if we had a flag)
+                if not pos_info.get("long_term", False):
+                    should_exit = True
+                    exit_reason = f"EOD Liquidation ({minutes_to_close} mins to close)"
+
             # Check if there is already a pending exit order for this symbol
-            if any(info.get("symbol") == symbol and info.get("side") in {"sell", "cover"} 
+            if not should_exit and any(info.get("symbol") == symbol and info.get("side") in {"sell", "cover"} 
                    for info in self.pending_orders.values()):
                 continue
 
@@ -821,32 +832,33 @@ class AutoTrader:
 
             # 1. Partial TP Rules (Dollar based)
             exit_qty = qty
-            if side == "short" and pnl_dollars >= Config.SHORT_EXIT_PROFIT_DOLLARS:
-                should_exit = True
-                exit_reason = f"SHORT_TP_REACHED_{Config.SHORT_EXIT_PROFIT_DOLLARS}_DOLLARS (PnL: ${pnl_dollars:.2f})"
-                exit_qty = qty
-            elif pnl_dollars >= Config.PARTIAL_TP2_DOLLARS:
-                should_exit = True
-                exit_reason = f"TP_REACHED_{Config.PARTIAL_TP2_DOLLARS}_DOLLARS (PnL: ${pnl_dollars:.2f})"
-                exit_qty = qty
-            elif pnl_dollars >= Config.PARTIAL_TP1_DOLLARS and not pos_info.get("sold_half", False):
-                should_exit = True
-                exit_reason = f"TP_REACHED_{Config.PARTIAL_TP1_DOLLARS}_DOLLARS_PARTIAL (PnL: ${pnl_dollars:.2f})"
-                exit_qty = max(1, int(qty / 2))
-                pos_info["sold_half"] = True
-                self._save_state()
-            else:
-                # 2. Standard Exit Rules (should_sell)
-                should_exit, exit_reason = self.strategy.should_sell(
-                    entry_price, 
-                    latest_price, 
-                    bars, 
-                    high_since_entry=pos_info["high_since_entry"],
-                    side=side,
-                    dynamic_config=self.dynamic_config,
-                    is_manual=is_manual
-                )
-                exit_qty = qty
+            if not should_exit:
+                if side == "short" and pnl_dollars >= Config.SHORT_EXIT_PROFIT_DOLLARS:
+                    should_exit = True
+                    exit_reason = f"SHORT_TP_REACHED_{Config.SHORT_EXIT_PROFIT_DOLLARS}_DOLLARS (PnL: ${pnl_dollars:.2f})"
+                    exit_qty = qty
+                elif pnl_dollars >= Config.PARTIAL_TP2_DOLLARS:
+                    should_exit = True
+                    exit_reason = f"TP_REACHED_{Config.PARTIAL_TP2_DOLLARS}_DOLLARS (PnL: ${pnl_dollars:.2f})"
+                    exit_qty = qty
+                elif pnl_dollars >= Config.PARTIAL_TP1_DOLLARS and not pos_info.get("sold_half", False):
+                    should_exit = True
+                    exit_reason = f"TP_REACHED_{Config.PARTIAL_TP1_DOLLARS}_DOLLARS_PARTIAL (PnL: ${pnl_dollars:.2f})"
+                    exit_qty = max(1, int(qty / 2))
+                    pos_info["sold_half"] = True
+                    self._save_state()
+                else:
+                    # 2. Standard Exit Rules (should_sell)
+                    should_exit, exit_reason = self.strategy.should_sell(
+                        entry_price, 
+                        latest_price, 
+                        bars, 
+                        high_since_entry=pos_info["high_since_entry"],
+                        side=side,
+                        dynamic_config=self.dynamic_config,
+                        is_manual=is_manual
+                    )
+                    exit_qty = qty
 
             is_partial = (exit_qty < qty)
 

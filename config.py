@@ -88,6 +88,10 @@ class Config:
     TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.5")) # Enabled by default
     TRAILING_STOP_ACTIVATION_PCT: float = float(os.getenv("TRAILING_STOP_ACTIVATION_PCT", "0.25")) # Only start trailing once in profit
 
+    # Intraday Liquidation
+    INTRA_DAY_MODE_ONLY: bool = os.getenv("INTRA_DAY_MODE_ONLY", "true").lower() == "true"
+    MARKET_CLOSE_LIQUIDATION_WINDOW_MINS: int = int(os.getenv("MARKET_CLOSE_LIQUIDATION_WINDOW_MINS", "15"))
+
     # Partial Take Profit Controls (Dollar based)
     PARTIAL_TP1_DOLLARS: float = float(os.getenv("PARTIAL_TP1_DOLLARS", "10.00"))
     PARTIAL_TP2_DOLLARS: float = float(os.getenv("PARTIAL_TP2_DOLLARS", "15.00"))
