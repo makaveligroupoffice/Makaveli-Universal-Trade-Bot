@@ -91,6 +91,7 @@ class Config:
     # Partial Take Profit Controls (Dollar based)
     PARTIAL_TP1_DOLLARS: float = float(os.getenv("PARTIAL_TP1_DOLLARS", "10.00"))
     PARTIAL_TP2_DOLLARS: float = float(os.getenv("PARTIAL_TP2_DOLLARS", "15.00"))
+    SHORT_EXIT_PROFIT_DOLLARS: float = float(os.getenv("SHORT_EXIT_PROFIT_DOLLARS", "5.00"))
 
     # Advanced Portfolio Management
     KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.5"))

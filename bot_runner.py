@@ -821,7 +821,11 @@ class AutoTrader:
 
             # 1. Partial TP Rules (Dollar based)
             exit_qty = qty
-            if pnl_dollars >= Config.PARTIAL_TP2_DOLLARS:
+            if side == "short" and pnl_dollars >= Config.SHORT_EXIT_PROFIT_DOLLARS:
+                should_exit = True
+                exit_reason = f"SHORT_TP_REACHED_{Config.SHORT_EXIT_PROFIT_DOLLARS}_DOLLARS (PnL: ${pnl_dollars:.2f})"
+                exit_qty = qty
+            elif pnl_dollars >= Config.PARTIAL_TP2_DOLLARS:
                 should_exit = True
                 exit_reason = f"TP_REACHED_{Config.PARTIAL_TP2_DOLLARS}_DOLLARS (PnL: ${pnl_dollars:.2f})"
                 exit_qty = qty
