@@ -642,7 +642,7 @@ class AutoTrader:
                 continue
 
             # Minimum Signal Strength Threshold to avoid weak setups
-            min_strength = 0.75 if action == "buy" else 0.8 # Shorts need more conviction
+            min_strength = 0.60 if action == "buy" else 0.65 # Lowered from 0.75/0.8 for more activity
             if strength < min_strength:
                 log.info(f"Skipping {symbol}: {action} signal strength {strength} is below threshold {min_strength}")
                 continue

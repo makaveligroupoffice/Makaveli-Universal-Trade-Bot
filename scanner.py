@@ -13,9 +13,9 @@ class Scanner:
     def __init__(self):
         self.data = MarketDataClient()
         self.universe = DEFAULT_UNIVERSE + BOND_UNIVERSE
-        self.min_price = 1.00
-        self.max_price = 30.00
-        self.min_total_volume = 100_000
+        self.min_price = Config.TV_SCREENER_PRICE_MIN
+        self.max_price = Config.TV_SCREENER_PRICE_MAX
+        self.min_total_volume = Config.TV_SCREENER_VOLUME_MIN
 
     def get_ranked_candidates(self, dynamic_config: dict | None = None) -> list[tuple[str, float]]:
         scored: list[tuple[str, float]] = []
@@ -43,7 +43,7 @@ class Scanner:
             scored.append((symbol, momentum + pnl_boost))
 
         scored.sort(key=lambda x: x[1], reverse=True)
-        return scored[:10]
+        return scored[:50] # Increased from 10 to 50 to allow more trades throughout the day
 
     def get_tv_candidates(self) -> list[str]:
         """
