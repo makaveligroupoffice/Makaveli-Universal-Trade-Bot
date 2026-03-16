@@ -230,30 +230,25 @@ class AutoTrader:
             risk_per_share = atr * Config.ATR_MULTIPLIER
             log.info(f"Using ATR-based risk for {symbol}: ATR={atr:.4f}, SL_Dist={risk_per_share:.4f} ({Config.ATR_MULTIPLIER}x)")
         else:
-            sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT)) / 100.0
+            sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if self.dynamic_config else Config.STOP_LOSS_PCT) / 100.0
             risk_per_share = price * sl_pct
             
         if risk_per_share <= 0:
             return 0.0
 
+        # Calculate Risk Amount based on Account Size
+        acct = self.broker.get_account()
+        equity = float(acct.equity)
+
+        # Base Risk: 1% of account or fixed dollar amount
         risk_amount = Config.RISK_PER_TRADE_DOLLARS
         if Config.USE_PERCENTAGE_RISK:
-            acct = self.broker.get_account()
-            equity = float(acct.equity)
-            
             # Kelly Criterion Integration
             perf = self.dynamic_config.get("symbol_performance", {}).get(symbol, {})
             # Use general stats or default if no symbol specific stats
             win_rate = 0.55 # Default assumption
             win_loss_ratio = 1.5 # Default 1.5:1
             
-            # Adjust based on learning engine history if available
-            if perf.get("count", 0) >= 5:
-                # Real data available for this symbol
-                # Calculate simple historical win rate
-                # (This would be more robust in a real implementation)
-                pass 
-                
             # Scale Kelly based on signal strength
             kelly_pct = self.risk.calculate_kelly_size(win_rate, win_loss_ratio, equity)
             risk_amount = equity * kelly_pct
@@ -268,23 +263,25 @@ class AutoTrader:
                     risk_amount *= (scale_factor * Config.VOL_SCALING_FACTOR)
                     log.info(f"Volatility scaling applied to {symbol}: {scale_factor:.2f}x multiplier")
 
-            log.info(f"Kelly sizing for {symbol}: {kelly_pct*100:.2f}% risk (${risk_amount:.2f})")
+            log.info(f"Calculated risk for {symbol}: {kelly_pct*100:.2f}% risk (${risk_amount:.2f})")
 
         # Scale risk based on signal strength (Tiered Aggression)
         risk_amount = risk_amount * signal_strength
 
+        # Quantity = Risk Amount / Risk Per Share (Stop Loss Distance)
         qty = risk_amount / risk_per_share
         
         # Determine dynamic max position value
         max_pos_value = Config.MAX_POSITION_VALUE_DOLLARS
         if Config.USE_PERCENTAGE_RISK:
-            # Removed overly aggressive compounding to ensure safety
-            max_pos_value = Config.MAX_POSITION_VALUE_DOLLARS
+            # Position value cap to ensure diversification (max 10% of equity per position)
+            max_pos_value = min(Config.MAX_POSITION_VALUE_DOLLARS, equity * 0.10)
 
         max_by_position_value = max_pos_value / price
         qty = min(qty, max_by_position_value) if max_by_position_value > 0 else 0
         
         if not is_crypto:
+            # For stocks, allow fractional if Alpaca allows, but most accounts use integers
             qty = int(qty)
             return float(qty) if qty > 0 else 0.0
 
@@ -737,14 +734,32 @@ class AutoTrader:
 
             try:
                 limit_price = None
+                stop_loss_price = None
+                take_profit_price = None
+                
                 if Config.USE_LIMIT_ORDERS:
+                    # For entry, use a very tight offset (e.g. 0.01% - 0.05%) to avoid slippage
                     offset = Config.LIMIT_OFFSET_PCT / 100.0
-                    limit_price = latest_price * (1 + offset) if action == "buy" else latest_price * (1 - offset)
+                    if action == "buy":
+                        limit_price = latest_price * (1 + offset)
+                    else:
+                        limit_price = latest_price * (1 - offset)
+
+                # Hard Stop-Loss and Take-Profit (Bracket Orders)
+                sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if self.dynamic_config else Config.STOP_LOSS_PCT) / 100.0
+                tp_pct = (self.dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if self.dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
+                
+                if action == "buy":
+                    stop_loss_price = latest_price * (1 - sl_pct)
+                    take_profit_price = latest_price * (1 + tp_pct)
+                else:
+                    stop_loss_price = latest_price * (1 + sl_pct)
+                    take_profit_price = latest_price * (1 - tp_pct)
 
                 if action == "buy":
-                    order = self.broker.buy(symbol, qty, limit_price=limit_price)
+                    order = self.broker.buy(symbol, qty, limit_price=limit_price, stop_loss_price=stop_loss_price, take_profit_price=take_profit_price)
                 else:
-                    order = self.broker.short(symbol, qty, limit_price=limit_price)
+                    order = self.broker.short(symbol, qty, limit_price=limit_price, stop_loss_price=stop_loss_price, take_profit_price=take_profit_price)
 
                 oid = str(getattr(order, "id", None))
                 self.state["pending_orders"][oid] = {

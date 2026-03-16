@@ -72,7 +72,7 @@ def generate_dashboard():
         print("Insufficient data for projections.")
 
     # 5. Risk Status
-    print(f"\n[RISK STATUS]")
+    print(f"\n[RISK & STRATEGY STATUS]")
     try:
         with open(Config.RISK_STATE_FILE, "r") as f:
             risk_state = json.load(f)
@@ -84,6 +84,11 @@ def generate_dashboard():
             print(f"Trades Today:    {trades_today} / {Config.MAX_TRADES_PER_DAY}")
             print(f"Daily Risk PnL:  ${daily_pnl:.2f}")
             print(f"Max Drawdown:    {dd:.2f}% / {Config.MAX_EQUITY_DRAWDOWN_PCT}%")
+            print(f"Stop Loss:       {Config.STOP_LOSS_PCT}% (Hard Bracket)")
+            print(f"Take Profit:     {Config.TAKE_PROFIT_PCT}% (Hard Bracket)")
+            print(f"Trailing Stop:   {Config.TRAILING_STOP_PCT}% (Activation: {Config.TRAILING_STOP_ACTIVATION_PCT}%)")
+            print(f"Limit Orders:    {'ENABLED' if Config.USE_LIMIT_ORDERS else 'DISABLED'}")
+
             if dd >= Config.MAX_EQUITY_DRAWDOWN_PCT:
                 print("\033[91m⚠️ CIRCUIT BREAKER ACTIVE: Trading Suspended\033[0m")
     except:

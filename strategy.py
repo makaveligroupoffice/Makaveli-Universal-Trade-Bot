@@ -498,8 +498,9 @@ class Strategy:
                 is_strong_trend = last_close < (last_sma20 * 0.99)
 
         # If it's a strong trend, LOOSEN the trailing stop to allow for bigger moves
+        # Targeting 10x growth by letting winners run
         if is_strong_trend:
-             ts_pct = ts_pct * 2.0 # Allow 2x room for strong runners
+             ts_pct = ts_pct * 1.5 # 1.5x room for strong runners (tightened from 2.0x)
 
         if side == "buy":
             # Stop loss - Only if not manual or if entry_price is set
@@ -507,7 +508,7 @@ class Strategy:
                 return True, f"stop loss hit ({sl_pct*100:.2f}%)"
             # Trailing stop - Only once in enough profit
             if ts_pct > 0 and high_since_entry and entry_price > 0:
-                is_activated = (high_since_entry >= entry_price * (1 + ts_activation_pct))
+                is_activated = (current_price >= entry_price * (1 + ts_activation_pct)) or (high_since_entry >= entry_price * (1 + ts_activation_pct))
                 if is_activated and current_price <= high_since_entry * (1 - ts_pct):
                     return True, f"trailing stop hit (high: {high_since_entry:.2f})"
             # Take profit - Only if not manual or if entry_price is set
@@ -520,7 +521,7 @@ class Strategy:
             # Trailing stop (low since entry)
             low_since_entry = high_since_entry
             if ts_pct > 0 and low_since_entry and entry_price > 0:
-                is_activated = (low_since_entry <= entry_price * (1 - ts_activation_pct))
+                is_activated = (current_price <= entry_price * (1 - ts_activation_pct)) or (low_since_entry <= entry_price * (1 - ts_activation_pct))
                 if is_activated and current_price >= low_since_entry * (1 + ts_pct):
                     return True, f"short trailing stop hit (low: {low_since_entry:.2f})"
             # Take profit (price went DOWN)

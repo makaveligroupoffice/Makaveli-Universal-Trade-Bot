@@ -3,7 +3,7 @@ from __future__ import annotations
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce, PositionSide, PositionIntent, OrderType, OrderClass
-from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, LimitOrderRequest, OrderRequest, OptionLegRequest
+from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, LimitOrderRequest, OrderRequest, OptionLegRequest, TakeProfitRequest, StopLossRequest
 
 from config import Config
 from broker_base import BrokerBase
@@ -17,10 +17,24 @@ class AlpacaBroker(BrokerBase):
             paper=paper if paper is not None else Config.ALPACA_PAPER,
         )
 
-    def buy(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):
+    def buy(self, symbol: str, qty: float, limit_price: float | None = None, stop_loss_price: float | None = None, take_profit_price: float | None = None, trailing_stop_pct: float | None = None, extended_hours: bool = False):
         is_crypto = "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"])
         tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
         
+        # Determine order class
+        order_class = OrderClass.SIMPLE
+        tp_req = None
+        sl_req = None
+        
+        if take_profit_price:
+            tp_req = TakeProfitRequest(limit_price=round(take_profit_price, 2))
+            order_class = OrderClass.BRACKET
+            
+        if stop_loss_price:
+            sl_req = StopLossRequest(stop_price=round(stop_loss_price, 2))
+            order_class = OrderClass.BRACKET if tp_req else OrderClass.OTO
+            
+        # For stocks, we prioritize hard stop loss orders as per user request
         if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,
@@ -28,7 +42,10 @@ class AlpacaBroker(BrokerBase):
                 side=OrderSide.BUY,
                 time_in_force=tif,
                 limit_price=round(limit_price, 2) if not is_crypto else limit_price,
-                extended_hours=extended_hours if not is_crypto else False
+                extended_hours=extended_hours if not is_crypto else False,
+                order_class=order_class,
+                take_profit=tp_req,
+                stop_loss=sl_req
             )
         else:
             order = MarketOrderRequest(
@@ -36,6 +53,9 @@ class AlpacaBroker(BrokerBase):
                 qty=qty,
                 side=OrderSide.BUY,
                 time_in_force=tif,
+                order_class=order_class,
+                take_profit=tp_req,
+                stop_loss=sl_req
             )
         return self.client.submit_order(order_data=order)
 
@@ -61,26 +81,47 @@ class AlpacaBroker(BrokerBase):
             )
         return self.client.submit_order(order_data=order)
 
-    def short(self, symbol: str, qty: int, limit_price: float | None = None, extended_hours: bool = False):
+    def short(self, symbol: str, qty: float, limit_price: float | None = None, stop_loss_price: float | None = None, take_profit_price: float | None = None, extended_hours: bool = False):
+        tif = TimeInForce.DAY
+        
+        # Determine order class
+        order_class = OrderClass.SIMPLE
+        tp_req = None
+        sl_req = None
+        
+        if take_profit_price:
+            tp_req = TakeProfitRequest(limit_price=round(take_profit_price, 2))
+            order_class = OrderClass.BRACKET
+            
+        if stop_loss_price:
+            sl_req = StopLossRequest(stop_price=round(stop_loss_price, 2))
+            order_class = OrderClass.BRACKET if tp_req else OrderClass.OTO
+
         if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.SELL,
-                time_in_force=TimeInForce.DAY,
+                time_in_force=tif,
                 limit_price=round(limit_price, 2),
-                extended_hours=extended_hours
+                extended_hours=extended_hours,
+                order_class=order_class,
+                take_profit=tp_req,
+                stop_loss=sl_req
             )
         else:
             order = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.SELL,
-                time_in_force=TimeInForce.DAY,
+                time_in_force=tif,
+                order_class=order_class,
+                take_profit=tp_req,
+                stop_loss=sl_req
             )
         return self.client.submit_order(order_data=order)
 
-    def cover(self, symbol: str, qty: int, limit_price: float | None = None, extended_hours: bool = False):
+    def cover(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):
         if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
             order = LimitOrderRequest(
                 symbol=symbol,

@@ -70,10 +70,10 @@ class Config:
     ENABLE_INTERNET_RESEARCH: bool = os.getenv("ENABLE_INTERNET_RESEARCH", "true").lower() == "true"
     RESEARCH_INTERVAL_SECONDS: int = int(os.getenv("RESEARCH_INTERVAL_SECONDS", "86400")) # 24 hours
     ENABLE_NEW_ENTRIES: bool = os.getenv("ENABLE_NEW_ENTRIES", "true").lower() == "true"
-    USE_LIMIT_ORDERS: bool = os.getenv("USE_LIMIT_ORDERS", "false").lower() == "true"
-    LIMIT_OFFSET_PCT: float = float(os.getenv("LIMIT_OFFSET_PCT", "0.05"))
-    MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.20")) # Tightened from 0.50
-    ORDER_TIMEOUT_SECONDS: int = int(os.getenv("ORDER_TIMEOUT_SECONDS", "180"))
+    USE_LIMIT_ORDERS: bool = os.getenv("USE_LIMIT_ORDERS", "true").lower() == "true"
+    LIMIT_OFFSET_PCT: float = float(os.getenv("LIMIT_OFFSET_PCT", "0.01"))
+    MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.15")) # Tightened from 0.20
+    ORDER_TIMEOUT_SECONDS: int = int(os.getenv("ORDER_TIMEOUT_SECONDS", "120"))
     MAX_CONSECUTIVE_FAILURES: int = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "5"))
     AUTO_SHUTDOWN_AFTER_CLOSE: bool = os.getenv("AUTO_SHUTDOWN_AFTER_CLOSE", "true").lower() == "true"
     LIVE_MODE_WHITELIST_ONLY: bool = os.getenv("LIVE_MODE_WHITELIST_ONLY", "true").lower() == "true"
@@ -83,10 +83,10 @@ class Config:
         if s.strip()
     )
 
-    STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "0.75"))
-    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "3.0")) # Increased from 2.5
-    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.5")) # Enabled by default
-    TRAILING_STOP_ACTIVATION_PCT: float = float(os.getenv("TRAILING_STOP_ACTIVATION_PCT", "0.25")) # Only start trailing once in profit
+    STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "0.50")) # Tightened from 0.75
+    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "4.0")) # Increased from 3.0
+    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.35")) # Tightened from 0.5
+    TRAILING_STOP_ACTIVATION_PCT: float = float(os.getenv("TRAILING_STOP_ACTIVATION_PCT", "0.20")) # Start trailing earlier
 
     # Intraday Liquidation
     INTRA_DAY_MODE_ONLY: bool = os.getenv("INTRA_DAY_MODE_ONLY", "true").lower() == "true"
