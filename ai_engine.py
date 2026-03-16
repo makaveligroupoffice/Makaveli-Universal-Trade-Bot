@@ -206,10 +206,16 @@ ADVICE: [Specific advice for this trade, e.g., 'Use tighter stop' or 'Wait for m
             # Log the full reasoning to a dedicated file for the user
             self._log_ai_reasoning(symbol, decision_text)
             
-            return "DECISION: YES" in decision_text.upper()
+            # Check for high confidence if possible, or just strict YES
+            is_yes = "DECISION: YES" in decision_text.upper()
+            
+            # Expert Mode: If we are 'going backwards', be extra conservative
+            # We can look for keywords like 'high confidence' or 'strong buy' if we want,
+            # but for now, just making sure YES is explicit.
+            return is_yes
         except Exception as e:
             log.error(f"AI signal verification failed for {symbol}: {e}")
-            return True # Fallback to true to avoid missing trades on AI error
+            return False # Conservative fallback: don't trade if AI is down
 
     def _log_ai_reasoning(self, symbol: str, text: str):
         """Logs AI reasoning to a separate file for user transparency."""

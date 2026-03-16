@@ -256,10 +256,8 @@ class AutoTrader:
         # Determine dynamic max position value
         max_pos_value = Config.MAX_POSITION_VALUE_DOLLARS
         if Config.USE_PERCENTAGE_RISK:
-            acct = self.broker.get_account()
-            equity = float(acct.equity)
-            # If compounding, allow position value up to 2x the normal cap or 25% of equity, whichever is higher
-            max_pos_value = max(Config.MAX_POSITION_VALUE_DOLLARS, equity * 0.25)
+            # Removed overly aggressive compounding to ensure safety
+            max_pos_value = Config.MAX_POSITION_VALUE_DOLLARS
 
         max_by_position_value = max_pos_value / price
         qty = min(qty, max_by_position_value) if max_by_position_value > 0 else 0
@@ -643,6 +641,12 @@ class AutoTrader:
             if not action:
                 continue
 
+            # Minimum Signal Strength Threshold to avoid weak setups
+            min_strength = 0.75 if action == "buy" else 0.8 # Shorts need more conviction
+            if strength < min_strength:
+                log.info(f"Skipping {symbol}: {action} signal strength {strength} is below threshold {min_strength}")
+                continue
+
             # 3. AI Signal Verification (Final Check)
             if Config.ENABLE_AI_TRADE_FILTER:
                 # Prepare indicators for AI analysis
@@ -753,11 +757,10 @@ class AutoTrader:
                 continue
 
             try:
+                # Exit with Market Order to ensure execution (Stop Loss/Emergency)
+                # When not explicitly using limit orders, or if it's an emergency, Market is safer.
                 limit_price = None
-                if Config.USE_LIMIT_ORDERS:
-                    offset = Config.LIMIT_OFFSET_PCT / 100.0
-                    limit_price = latest_price * (1 - offset) if side == "buy" else latest_price * (1 + offset)
-
+                
                 action = "sell" if side == "buy" else "cover"
                 order = self.broker.sell_all(symbol, limit_price=limit_price)
                 
@@ -890,14 +893,19 @@ if __name__ == "__main__":
     
     # Start the Bot HUD Display
     hud_proc = None
-    try:
-        log.info("Starting Bot HUD Display (bot_display.py)...")
-        # Use sys.executable to ensure we use the same python interpreter
-        hud_proc = subprocess.Popen([sys.executable, "bot_display.py"], 
-                                     stdout=subprocess.DEVNULL, 
-                                     stderr=subprocess.DEVNULL)
-    except Exception as e:
-        log.error(f"Failed to start Bot HUD Display: {e}")
+    def start_hud():
+        try:
+            log.info("Starting Bot HUD Display (bot_display.py)...")
+            # Log HUD output to a file for debugging
+            hud_log = open("logs/bot_display.log", "a")
+            return subprocess.Popen([sys.executable, "bot_display.py"], 
+                                         stdout=hud_log, 
+                                         stderr=hud_log)
+        except Exception as e:
+            log.error(f"Failed to start Bot HUD Display: {e}")
+            return None
+
+    hud_proc = start_hud()
 
     try:
         # Initialize DB in case it doesn't exist or is outdated
@@ -913,8 +921,12 @@ if __name__ == "__main__":
                 log.error(f"Startup auto-update failed: {e}")
 
         last_update_check = time.time()
-        
         while True:
+            # Ensure Bot HUD is running
+            if hud_proc is None or hud_proc.poll() is not None:
+                log.warning("Bot HUD Display not running. Restarting...")
+                hud_proc = start_hud()
+
             with app.app_context():
                 users = User.query.all()
                 if not users:
