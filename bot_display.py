@@ -111,6 +111,7 @@ class BotDisplay:
         self.scan_val = 0
         self.aura_val = 0
         self.op_state = "SCANNING"
+        self.kill_switch_active = False
         self.trading_pulse = 0
         
         # State paths
@@ -292,7 +293,9 @@ class BotDisplay:
             self.canvas.itemconfig(self.eye_r, state="normal")
 
         # 5. Chest Monitor "Heartbeat" / Glitch
-        if self.op_state == "TRADING":
+        if self.kill_switch_active:
+             self.canvas.itemconfig(self.chest_text, text="HALT")
+        elif self.op_state == "TRADING":
              # Fast flashing
              text = "TRADE" if (int(time.time() * 10) % 2 == 0) else "EXEC"
              self.canvas.itemconfig(self.chest_text, text=text)
@@ -316,7 +319,12 @@ class BotDisplay:
                     bot_state = json.load(f)
                 
                 self.op_state = bot_state.get("operational_state", "SCANNING")
-                self.lbl_mode.config(text=f"MODE: {self.op_state}")
+                self.kill_switch_active = bot_state.get("kill_switch_active", False)
+                
+                if self.kill_switch_active:
+                    self.lbl_mode.config(text="MODE: KILL SWITCH", fg="#FF0000")
+                else:
+                    self.lbl_mode.config(text=f"MODE: {self.op_state}", fg="#00FF00")
                 
                 positions = bot_state.get("positions", {})
                 num_pos = len(positions)

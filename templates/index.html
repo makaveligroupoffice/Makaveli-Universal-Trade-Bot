@@ -92,6 +92,12 @@
             <button onclick="triggerAction('scan')" class="cyber-panel bg-blue-900 bg-opacity-20 hover:bg-opacity-40 p-3 rounded uppercase font-bold text-xs transition-all">Manual Scan</button>
         </div>
 
+        <!-- Emergency & Auth -->
+        <div class="mt-6 grid grid-cols-2 gap-4">
+            <button onclick="triggerKillSwitch()" class="cyber-panel bg-red-900 bg-opacity-40 hover:bg-opacity-60 border-red-500 p-3 rounded uppercase font-bold text-xs transition-all text-red-500">KILL SWITCH</button>
+            <button onclick="promptAuthorization()" class="cyber-panel bg-yellow-900 bg-opacity-20 hover:bg-opacity-40 border-yellow-500 p-3 rounded uppercase font-bold text-xs transition-all text-yellow-500">AUTH TOKEN</button>
+        </div>
+
         <!-- Log/Activity Feed -->
         <div class="mt-8 text-[9px] text-gray-600 font-mono h-24 overflow-y-auto" id="logFeed">
             > INITIALIZING MOBILE INTERFACE...<br>

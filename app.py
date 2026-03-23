@@ -4,7 +4,7 @@ import logging
 import zipfile
 import io
 import csv
-from flask import Flask, render_template, jsonify, send_from_directory, send_file
+from flask import Flask, render_template, jsonify, send_from_directory, send_file, request
 from flask_login import current_user
 from config import Config
 from broker_alpaca import AlpacaBroker
@@ -72,6 +72,67 @@ def get_stats():
         })
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/bot/authorize", methods=["POST"])
+def authorize_bot():
+    try:
+        data = request.json or {}
+        token = data.get("token")
+        
+        if token == Config.AUTH_TOKEN:
+            from bot_state import BotStateStore
+            store = BotStateStore(Config.BOT_STATE_FILE)
+            state = store.load()
+            state["sharing_authorized"] = True
+            store.save(state)
+            logger.info("Bot successfully AUTHORIZED with token.")
+            return jsonify({"ok": True, "message": "Authorized successfully"})
+        else:
+            return jsonify({"ok": False, "error": "Invalid token"}), 401
+    except Exception as e:
+        logger.error(f"Error authorizing bot: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/bot/kill", methods=["POST"])
+def kill_switch():
+    try:
+        from bot_state import BotStateStore
+        store = BotStateStore(Config.BOT_STATE_FILE)
+        state = store.load()
+        
+        # Activate kill switch
+        state["enabled"] = False
+        state["kill_switch_active"] = True
+        store.save(state)
+        
+        logger.critical("KILL SWITCH TRIGGERED via Web HUD")
+        
+        # Execute emergency actions
+        broker = AlpacaBroker()
+        
+        # 1. Cancel all orders
+        try:
+            broker.client.cancel_orders()
+            logger.info("Kill Switch: Cancel orders sent")
+        except Exception as e:
+            logger.error(f"Kill Switch: Failed to cancel orders: {e}")
+            
+        # 2. Close all positions
+        try:
+            positions = broker.get_open_positions()
+            for pos in positions:
+                broker.sell_all(pos.symbol)
+                logger.info(f"Kill Switch: Closing {pos.symbol}")
+        except Exception as e:
+            logger.error(f"Kill Switch: Failed to close positions: {e}")
+            
+        from notifications import send_notification
+        send_notification("CRITICAL: Kill switch activated. Bot disabled and positions closed.", title="KILL SWITCH")
+        
+        return jsonify({"ok": True, "message": "Kill switch activated, positions closing."})
+    except Exception as e:
+        logger.error(f"Error triggering kill switch: {e}")
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/toggle", methods=["POST"])

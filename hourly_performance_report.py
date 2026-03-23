@@ -7,6 +7,10 @@ from calculate_today_pl import calculate_today_stats
 from notifications import send_notification
 from config import Config
 
+from broker_alpaca import AlpacaBroker
+
+from eod_performance_report import run_eod_report
+
 # Configure logging
 logging.basicConfig(
     filename='logs/hourly_reports.log',
@@ -14,9 +18,24 @@ logging.basicConfig(
     format='%(asctime)s | %(levelname)s | %(message)s'
 )
 
-def run_report():
+def is_market_open():
     try:
-        stats = calculate_today_stats()
+        broker = AlpacaBroker()
+        clock = broker.get_clock()
+        return clock.is_open
+    except Exception as e:
+        logging.error(f"Error checking market clock: {e}")
+        return False
+
+def run_report(force=False):
+    try:
+        if not force and not is_market_open():
+            logging.info("Market is closed. Skipping hourly report.")
+            return
+
+        # Use start of today for stats
+        today_str = datetime.now().strftime('%Y-%m-%dT00:00:00')
+        stats = calculate_today_stats(start_time=today_str)
         if not stats:
             logging.info("No trades found for today yet.")
             return
@@ -40,29 +59,35 @@ def run_report():
         print(f"Error: {e}")
 
 if __name__ == "__main__":
-    # The user wants an update every hour starting from 14:30.
-    # If we run this as a persistent process:
     print("Hourly Performance Reporter started.")
+    
+    last_market_open = False
     
     while True:
         now = datetime.now()
-        # Calculate target time: today at 14:30
-        target = now.replace(hour=14, minute=30, second=0, microsecond=0)
         
-        # If it's already past 14:30, find the next "on the half hour" slot
-        if now >= target:
-            # How many hours passed since 14:30?
-            hours_passed = (now - target).total_seconds() // 3600
-            target = target + timedelta(hours=hours_passed + 1)
-        
-        # Check if it's EXACTLY 14:30 (or close enough) right now if we just started
-        # Actually, let's just wait until the next target.
-        # BUT the user might want the FIRST one at 14:30.
+        # Check market status to trigger EOD if it just closed
+        try:
+            broker = AlpacaBroker()
+            clock = broker.get_clock()
+            is_open = clock.is_open
+            
+            # If market was open and now is closed, trigger EOD report
+            if last_market_open and not is_open:
+                print(f"[{now.strftime('%H:%M:%S')}] Market closed. Triggering EOD report.")
+                run_eod_report()
+            
+            last_market_open = is_open
+        except Exception as e:
+            print(f"Error checking market clock in main loop: {e}")
+
+        # Sleep logic: every hour on the hour (e.g. 10:00, 11:00)
+        # We find the next hour
+        target = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         
         sleep_seconds = (target - now).total_seconds()
         if sleep_seconds > 0:
-            print(f"Next report scheduled for {target.strftime('%H:%M:%S')}. Sleeping for {sleep_seconds:.0f}s...")
-            # Sleep in chunks to allow for termination or just one big sleep
+            print(f"Next hourly check scheduled for {target.strftime('%H:%M:%S')}. Sleeping...")
             time.sleep(sleep_seconds)
         
         run_report()

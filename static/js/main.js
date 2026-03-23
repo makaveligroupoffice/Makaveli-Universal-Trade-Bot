@@ -88,6 +88,44 @@ function toggleBot() {
         });
 }
 
+function triggerKillSwitch() {
+    if (!confirm('CRITICAL: This will stop the bot, cancel all orders, and close all positions. ARE YOU SURE?')) return;
+    
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> TRIGGERING KILL SWITCH...<br>`;
+    fetch('/api/bot/kill', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                log.innerHTML += `> SERVER: ${data.message}<br>`;
+                updateStats();
+            } else {
+                log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+            }
+            log.scrollTop = log.scrollHeight;
+        });
+}
+
+function promptAuthorization() {
+    const token = prompt('Enter Authorization Token:');
+    if (!token) return;
+    
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> AUTHORIZING BOT...<br>`;
+    fetch('/api/bot/authorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+    }).then(res => res.json()).then(data => {
+        if (data.ok) {
+            log.innerHTML += `> SERVER: ${data.message}<br>`;
+        } else {
+            log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+        }
+        log.scrollTop = log.scrollHeight;
+    });
+}
+
 // BOT ANIMATION (Ported from Tkinter to Web Canvas)
 function drawBot() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);

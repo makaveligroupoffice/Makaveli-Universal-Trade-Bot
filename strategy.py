@@ -327,11 +327,13 @@ class Strategy:
         # Final Decision
         final_strength = min(1.0, strength_score)
         
-        if num_families >= 2 and final_strength >= 0.7:
+        # Increase requirement to 3 families or 2 families + high strength
+        if (num_families >= 3 and final_strength >= 0.7) or (num_families >= 2 and final_strength >= 0.85):
             return True, f"CONFLUENCE ({'+'.join(matches)})", final_strength, last_indicators
         
-        if "TREND_SNIPER" in matches and last['rvol'] > 2.5:
-            return True, "SNIPER: high-conviction trend stack + volume", 1.0, last_indicators
+        # Stricter Sniper: Requires trend match + higher RVOL
+        if "TREND_SNIPER" in matches and last['rvol'] > 3.5:
+            return True, "SNIPER: ultra-high-conviction trend stack + volume", 1.0, last_indicators
 
         if "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_green:
              return True, f"AGGRESSIVE: {matches[0] if matches else 'MOMENTUM'}", final_strength, last_indicators
@@ -481,13 +483,16 @@ class Strategy:
 
         # --- CONFLUENCE LOGIC ---
         num_families = sum([trend_match, mom_match, pa_match, break_match])
+        # Final Decision
         final_strength = min(1.0, strength_score)
         
-        if num_families >= 2 and final_strength >= 0.7:
+        # Increase requirement to 3 families or 2 families + high strength
+        if (num_families >= 3 and final_strength >= 0.7) or (num_families >= 2 and final_strength >= 0.85):
             return True, f"CONFLUENCE SHORT ({'+'.join(matches)})", final_strength, last_indicators
         
-        if "SNIPER_SHORT" in matches and last['rvol'] > 2.5:
-            return True, "SNIPER: high-conviction bear trend stack + volume", 1.0, last_indicators
+        # Stricter Sniper Short: Requires trend match + higher RVOL
+        if "SNIPER_SHORT" in matches and last['rvol'] > 3.5:
+            return True, "SNIPER SHORT: ultra-high-conviction trend stack + volume", 1.0, last_indicators
 
         if "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_red:
              return True, f"AGGRESSIVE SHORT: {matches[0] if matches else 'MOMENTUM'}", final_strength, last_indicators

@@ -3,12 +3,14 @@ import os
 from dataclasses import dataclass
 
 load_dotenv()
+load_dotenv("logs/auth.env")
 
 
 @dataclass(frozen=True)
 class Config:
     # Security
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "change_me")
+    AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "admin-token-12345")
 
     # Broker
     BROKER: str = os.getenv("BROKER", "ALPACA")
@@ -83,10 +85,10 @@ class Config:
         if s.strip()
     )
 
-    STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "0.50")) # Tightened from 0.75
-    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "4.0")) # Increased from 3.0
-    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.35")) # Tightened from 0.5
-    TRAILING_STOP_ACTIVATION_PCT: float = float(os.getenv("TRAILING_STOP_ACTIVATION_PCT", "0.20")) # Start trailing earlier
+    STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "1.5")) # Loosened from 0.50
+    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "3.0")) # Lowered from 4.0 to increase win rate
+    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.75")) # Loosened from 0.35
+    TRAILING_STOP_ACTIVATION_PCT: float = float(os.getenv("TRAILING_STOP_ACTIVATION_PCT", "0.5")) # Start trailing later
 
     # Intraday Liquidation
     INTRA_DAY_MODE_ONLY: bool = os.getenv("INTRA_DAY_MODE_ONLY", "true").lower() == "true"

@@ -150,6 +150,7 @@ class AutoTrader:
         if int(now) % 3600 < 60: # once an hour roughly
              self.state["operational_state"] = "READING"
              self.learning.evolve()
+             self._monitor_manual_trades()
              self.state["dynamic_config"] = self.learning.get_dynamic_config()
              
              # Also perform internet research if market is closed and it's time
@@ -209,6 +210,97 @@ class AutoTrader:
     @staticmethod
     def _now_ts() -> float:
         return time.time()
+
+    def _monitor_manual_trades(self):
+        """Fetches recent orders from Alpaca and identifies manual trades to learn from."""
+        try:
+            # Fetch last 50 orders
+            orders = self.broker.get_orders(status="all", limit=50)
+            if not orders:
+                return
+
+            # Get known bot orders from state
+            bot_order_ids = set(self.state.get("pending_orders", {}).keys())
+            bot_order_ids.update(self.state.get("last_order_statuses", {}).keys())
+            
+            # Also check journal for recent bot orders to be sure
+            journal_path = Config.TRADE_JOURNAL_FILE
+            if os.path.exists(journal_path):
+                with open(journal_path, "r") as f:
+                    for line in f:
+                        try:
+                            entry = json.loads(line)
+                            oid = entry.get("order_id")
+                            if oid: bot_order_ids.add(str(oid))
+                        except: pass
+
+            for order in orders:
+                oid = str(order.id)
+                if oid in bot_order_ids:
+                    continue
+                
+                # This is a manual trade (not initiated by bot)
+                if order.status != "filled":
+                    continue
+
+                # Check if we already processed this manual trade
+                processed_manual = self.state.get("processed_manual_orders", [])
+                if oid in processed_manual:
+                    continue
+
+                symbol = order.symbol
+                side = order.side
+                qty = float(order.qty)
+                price = float(order.filled_avg_price) if order.filled_avg_price else float(order.limit_price or 0)
+                
+                log.info(f"Detected manual trade: {side} {qty} {symbol} at {price}. Recording for learning.")
+                
+                # Capture context (indicators) at this moment
+                bars = self.data.get_recent_bars(symbol, minutes=30)
+                indicators = {}
+                if len(bars) >= 20:
+                    indicators = self.strategy._calculate_indicators(bars)
+                
+                market_state = self.data.get_market_regime()
+                
+                # Record in journal with manual flag and context
+                context = {
+                    "indicators": indicators,
+                    "market_state": market_state,
+                    "order_id": oid
+                }
+                
+                # We need to estimate PnL for exits
+                pnl = None
+                if side in ["sell", "cover"]:
+                    # Try to find the entry in recent positions or journal
+                    # For now, we'll just record it and let LearningEngine handle it
+                    pass
+
+                self.journal.record_trade(
+                    symbol=symbol,
+                    action=side,
+                    qty=qty,
+                    price=price,
+                    side=side,
+                    pnl=pnl,
+                    reason=f"Manual Trade Detection (ID: {oid})",
+                    manual=True,
+                    context=context
+                )
+                
+                # Attach context to the last recorded entry in journal (hacky but works if we update record_trade)
+                # Actually, let's update record_trade to accept context
+                
+                processed_manual.append(oid)
+                # Keep list reasonable
+                if len(processed_manual) > 200:
+                    processed_manual = processed_manual[-200:]
+                self.state["processed_manual_orders"] = processed_manual
+                self._save_state()
+
+        except Exception as e:
+            log.error(f"Error monitoring manual trades: {e}")
 
     @staticmethod
     def _elapsed_seconds(start_ts: float | None) -> float:
@@ -928,6 +1020,26 @@ class AutoTrader:
                 self._save_state()
 
     def run(self, single_cycle: bool = False):
+        # 1. License / Sharing Authorization Check
+        try:
+            state_raw = self.state_store.load()
+            if not state_raw.get("sharing_authorized", False):
+                # If not authorized, we check if an AUTH_TOKEN is provided in environment
+                # that matches our Config.AUTH_TOKEN. This is a one-time "activation".
+                # For this simple implementation, we check if the user has EVER authorized.
+                log.warning("Bot sharing not authorized. Please authorize with your token.")
+                if not single_cycle:
+                    send_notification("Trade Bot startup blocked: Authorization Required", title="Security Alert")
+                
+                # In a real scenario, we might wait for input or a web trigger.
+                # For now, we'll just exit to prevent unauthorized use of the bot source.
+                if not single_cycle:
+                    time.sleep(5)
+                    sys.exit(1)
+        except Exception as e:
+            log.error(f"Error checking authorization: {e}")
+            sys.exit(1)
+
         if not single_cycle:
             msg = f"AutoTrader started for user: {self.user.username if self.user else 'DEFAULT'}"
             log.info(msg)
@@ -950,9 +1062,18 @@ class AutoTrader:
 
         while True:
             try:
-                # Check global enable switch
+                # Check global enable switch and kill switch
                 try:
                     state_raw = self.state_store.load()
+                    if state_raw.get("kill_switch_active", False):
+                        log.critical("KILL SWITCH IS ACTIVE. Bot will not trade.")
+                        if not single_cycle:
+                            self.sync_state()
+                            time.sleep(60)
+                            continue
+                        else:
+                            break
+
                     if not state_raw.get("enabled", True):
                         # If disabled, we still want to keep the UI informed and handle exits for safety,
                         # but we skip everything else.

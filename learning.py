@@ -119,14 +119,21 @@ class LearningEngine:
             return
 
         trades = []
+        manual_trades = []
         try:
             with open(self.journal_path, "r") as f:
                 for line in f:
                     entry = json.loads(line)
-                    if entry.get("event_type") == "sell_filled":
+                    if entry.get("event_type") in ["sell_filled", "cover_filled"]:
+                        if entry.get("manual"):
+                            manual_trades.append(entry)
                         trades.append(entry)
         except:
             return
+
+        # Handle manual trade learning
+        if manual_trades:
+            self.learn_from_manual_trades(manual_trades)
 
         if len(trades) < 5:
             return # Not enough data to evolve yet
@@ -180,6 +187,67 @@ class LearningEngine:
 
         if abs(old_sl - self.state["stop_loss_pct"]) > 0.01:
             send_notification(f"🤖 Bot Evolved: Stop Loss adjusted to {self.state['stop_loss_pct']:.2f}% based on recent performance analysis.")
+
+    def learn_from_manual_trades(self, manual_trades):
+        """Analyze manual trades and extract lessons."""
+        lessons_path = "logs/lessons_learned.jsonl"
+        existing_ids = set()
+        if os.path.exists(lessons_path):
+            with open(lessons_path, "r") as f:
+                for line in f:
+                    try:
+                        existing_ids.add(json.loads(line).get("id"))
+                    except: pass
+
+        new_lessons = []
+        for trade in manual_trades:
+            trade_id = trade.get("context", {}).get("order_id") if trade.get("context") else None
+            if not trade_id:
+                trade_id = f"{trade.get('symbol')}_{trade.get('timestamp')}"
+            
+            if trade_id in existing_ids:
+                continue
+            
+            # Analyze why it was successful or failure
+            pnl = trade.get("pnl", 0)
+            context = trade.get("context", {})
+            
+            # Logic: If pnl is None, try to calculate it or just mark as 'informative'
+            success = None
+            if pnl is not None:
+                success = pnl > 0
+            
+            lesson = {
+                "id": trade_id,
+                "timestamp": datetime.now().isoformat(),
+                "symbol": trade.get("symbol"),
+                "side": trade.get("side"),
+                "pnl": pnl,
+                "success": success,
+                "reason": trade.get("reason"),
+                "indicators_at_time": context.get("indicators"),
+                "market_state": context.get("market_state")
+            }
+            new_lessons.append(lesson)
+            
+            with open(lessons_path, "a") as f:
+                f.write(json.dumps(lesson) + "\n")
+
+        if new_lessons:
+            log.info(f"Learned {len(new_lessons)} new lessons from manual trades.")
+        # Trigger code evolution with these lessons
+        lessons_summary = "\n".join([
+            f"Manual Trade on {l['symbol']}: PnL=${l['pnl'] if l['pnl'] is not None else 'N/A'}, Reason: {l['reason']}, Success: {l['success']}"
+            for l in new_lessons
+        ])
+        
+        # Add extra analysis: What would the bot have done?
+        for l in new_lessons:
+            log.info(f"Analyzing manual trade lesson for {l['symbol']}...")
+            # We could add more logic here to compare with Strategy.should_buy
+            pass
+
+        self.evolve_code(f"MANUAL_TRADE_LESSONS:\n{lessons_summary}")
 
     def evolve_code(self, analysis_report: str):
         """
