@@ -59,6 +59,23 @@ class AIEngine:
         """
         return self._ai_code_generation(current_code, f"Internet Research Summary:\n{research_summary}")
 
+    def extract_strategy_from_transcript(self, transcript: str):
+        """Analyze a YouTube transcript to extract a trading strategy."""
+        prompt = f"Analyze the following YouTube transcript from a trading video. Extract the core trading strategy, including entry rules, exit rules, indicators used, and timeframes mentioned. Format the result as a concise set of 'LESSONS LEARNED' for an algorithmic trading bot.\n\nTRANSCRIPT:\n{transcript}"
+        try:
+            response = self.client.chat.completions.create(
+                model=Config.AI_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a professional trading strategist and code evolution expert."},
+                    {"role": "user", "content": f"Extract the trading strategy from this transcript and summarize it for bot integration: {prompt}"}
+                ],
+                temperature=0.3
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            log.error(f"AI failed to extract strategy from transcript: {e}")
+            return None
+
     def _ai_code_generation(self, current_code: str, context: str) -> str:
         """
         Generic helper for AI code generation.
@@ -221,6 +238,41 @@ ADVICE: [Specific advice for this trade, e.g., 'Use tighter stop', 'Trailing sto
         except Exception as e:
             log.error(f"AI signal verification failed for {symbol}: {e}")
             return False # Conservative fallback: don't trade if AI is down
+
+    def synthesize_universal_knowledge(self, books: list[str]) -> str:
+        """
+        Synthesizes core actionable trading principles from a list of classic books.
+        """
+        if not self.client:
+            return ""
+
+        books_text = "\n".join([f"- {b}" for b in books])
+        prompt = f"""
+Analyze and synthesize the most critical, actionable trading rules and principles from these classic trading books:
+{books_text}
+
+Focus on:
+1. Risk management (Stop losses, position sizing).
+2. Entry/Exit filters (Volume, trend alignment, momentum).
+3. Psychological discipline (Wait for the setup, don't chase).
+4. Market regime detection.
+
+Return a structured summary of 'Universal Laws' that can be used to improve a trading bot's Python code.
+"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a master algorithmic trader and financial scholar. Your goal is to extract the 'essence' of trading wisdom for code implementation."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1000,
+                temperature=0.3
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            log.error(f"Universal knowledge synthesis failed: {e}")
+            return ""
 
     def _log_ai_reasoning(self, symbol: str, text: str):
         """Logs AI reasoning to a separate file for user transparency."""

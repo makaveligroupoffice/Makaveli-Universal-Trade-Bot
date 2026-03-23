@@ -122,6 +122,12 @@ class Strategy:
         df['dx'] = 100 * (df['plus_di'] - df['minus_di']).abs() / (df['plus_di'] + df['minus_di'])
         df['adx'] = df['dx'].ewm(alpha=alpha, adjust=False).mean()
         
+        # --- VWAP (Simplified) ---
+        df['cum_vol'] = df['volume'].cumsum()
+        df['cum_pv'] = ((df['high'] + df['low'] + df['close']) / 3 * df['volume']).cumsum()
+        df['vwap'] = df['cum_pv'] / df['cum_vol']
+        df['above_vwap'] = df['close'] > df['vwap']
+
         # --- Volume Indicators ---
         df['avg_volume20'] = df['volume'].rolling(20).mean()
         df['rvol'] = df['volume'] / df['avg_volume20']
@@ -235,9 +241,12 @@ class Strategy:
         sniper_stack = last['close'] > last['sma10'] > last['sma20']
         if 'sma50' in last and not pd.isna(last['sma50']):
             sniper_stack = sniper_stack and last['sma20'] > last['sma50']
+        
+        # VWAP Filter
+        vwap_filter = last['close'] > last['vwap'] if 'vwap' in last else True
 
         if "TREND" in active:
-            if long_term_bullish and hourly_trend_bullish and sniper_stack and last_candle_green and close_relative_pos >= min_close_relative:
+            if long_term_bullish and hourly_trend_bullish and sniper_stack and last_candle_green and close_relative_pos >= min_close_relative and vwap_filter:
                 matches.append("TREND_SNIPER")
                 strength_score += 0.5
                 trend_match = True
@@ -327,15 +336,25 @@ class Strategy:
         # Final Decision
         final_strength = min(1.0, strength_score)
         
+        # --- High Probability Filters ---
+        # 1. ADX Trend Strength: Ensure a trend exists for trend-based entries
+        is_trending = last['adx'] > Config.MIN_ADX_TREND
+        
+        # 2. RSI Extreme: Avoid buying at the absolute peak
+        rsi_safe = last['rsi14'] < 70
+
         # Increase requirement to 3 families or 2 families + high strength
-        if (num_families >= 3 and final_strength >= 0.7) or (num_families >= 2 and final_strength >= 0.85):
+        # AND require ADX for TREND_SNIPER
+        if (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe):
+            if "TREND_SNIPER" in matches and not is_trending:
+                return False, f"TREND_SNIPER rejected: weak trend (ADX: {last['adx']:.1f})", 0.0, last_indicators
             return True, f"CONFLUENCE ({'+'.join(matches)})", final_strength, last_indicators
         
-        # Stricter Sniper: Requires trend match + higher RVOL
-        if "TREND_SNIPER" in matches and last['rvol'] > 3.5:
+        # Stricter Sniper: Requires trend match + higher RVOL + ADX trend
+        if "TREND_SNIPER" in matches and last['rvol'] > 3.5 and is_trending:
             return True, "SNIPER: ultra-high-conviction trend stack + volume", 1.0, last_indicators
 
-        if "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_green:
+        if "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_green and rsi_safe:
              return True, f"AGGRESSIVE: {matches[0] if matches else 'MOMENTUM'}", final_strength, last_indicators
 
         return False, "insufficient confluence or signal strength", 0.0, last_indicators
@@ -402,9 +421,12 @@ class Strategy:
         sniper_bearish_stack = last['close'] < last['sma10'] < last['sma20']
         if 'sma50' in last and not pd.isna(last['sma50']):
             sniper_bearish_stack = sniper_bearish_stack and last['sma20'] < last['sma50']
+            
+        # VWAP Filter for Shorts
+        vwap_filter_short = last['close'] < last['vwap'] if 'vwap' in last else True
 
         if "TREND" in active:
-            if long_term_bearish and hourly_trend_bearish and sniper_bearish_stack and last_candle_red and close_relative_pos >= min_close_relative:
+            if long_term_bearish and hourly_trend_bearish and sniper_bearish_stack and last_candle_red and close_relative_pos >= min_close_relative and vwap_filter_short:
                 matches.append("SNIPER_SHORT")
                 strength_score += 0.5
                 trend_match = True
@@ -486,15 +508,24 @@ class Strategy:
         # Final Decision
         final_strength = min(1.0, strength_score)
         
+        # --- High Probability Filters ---
+        # 1. ADX Trend Strength: Ensure a trend exists for trend-based shorting
+        is_trending = last['adx'] > Config.MIN_ADX_TREND
+        
+        # 2. RSI Extreme: Avoid shorting at the absolute bottom
+        rsi_safe = last['rsi14'] > 30
+
         # Increase requirement to 3 families or 2 families + high strength
-        if (num_families >= 3 and final_strength >= 0.7) or (num_families >= 2 and final_strength >= 0.85):
+        if (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe):
+            if "SNIPER_SHORT" in matches and not is_trending:
+                return False, f"SNIPER_SHORT rejected: weak trend (ADX: {last['adx']:.1f})", 0.0, last_indicators
             return True, f"CONFLUENCE SHORT ({'+'.join(matches)})", final_strength, last_indicators
         
-        # Stricter Sniper Short: Requires trend match + higher RVOL
-        if "SNIPER_SHORT" in matches and last['rvol'] > 3.5:
+        # Stricter Sniper Short: Requires trend match + higher RVOL + ADX trend
+        if "SNIPER_SHORT" in matches and last['rvol'] > 3.5 and is_trending:
             return True, "SNIPER SHORT: ultra-high-conviction trend stack + volume", 1.0, last_indicators
 
-        if "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_red:
+        if "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_red and rsi_safe:
              return True, f"AGGRESSIVE SHORT: {matches[0] if matches else 'MOMENTUM'}", final_strength, last_indicators
 
         return False, "insufficient confluence or signal strength", 0.0, last_indicators
@@ -509,6 +540,39 @@ class Strategy:
         tp_pct = (dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
         ts_pct = Config.TRAILING_STOP_PCT / 100.0 
         ts_activation_pct = Config.TRAILING_STOP_ACTIVATION_PCT / 100.0
+
+        # --- Dynamic ATR-Based Exits ---
+        last_atr = 0.0
+        if len(bars) >= 20:
+            df_full = Strategy._calculate_indicators(bars)
+            if df_full is not None:
+                last_atr = df_full['atr14'].iloc[-1]
+                
+        if Config.ENABLE_DYNAMIC_ATR_EXITS and last_atr > 0 and entry_price > 0:
+            # Override SL/TP with ATR multiples if more conservative
+            atr_sl_price = last_atr * Config.ATR_SL_MULTIPLIER
+            atr_tp_price = last_atr * Config.ATR_TP_MULTIPLIER
+            
+            atr_sl_pct = atr_sl_price / entry_price
+            atr_tp_pct = atr_tp_price / entry_price
+            
+            # Use the tighter of the two (fixed pct vs ATR)
+            sl_pct = min(sl_pct, atr_sl_pct)
+            tp_pct = max(tp_pct, atr_tp_pct) # For TP we might want to go LARGER with ATR if it's trending
+
+        # --- Break-Even Stop Logic ---
+        be_profit_pct = Config.BREAK_EVEN_PROFIT_PCT / 100.0
+        is_at_break_even = False
+        if entry_price > 0:
+            if side == "buy":
+                highest_pct = (high_since_entry / entry_price) - 1 if high_since_entry else 0
+                if highest_pct >= be_profit_pct:
+                    is_at_break_even = True
+            else: # short
+                low_since_entry = high_since_entry # Reuse variable name
+                lowest_pct = (entry_price / low_since_entry) - 1 if low_since_entry else 0
+                if lowest_pct >= be_profit_pct:
+                    is_at_break_even = True
 
         # --- Dynamic Strategy Switch: Scalp vs. Hold ---
         is_strong_trend = False
@@ -530,9 +594,12 @@ class Strategy:
              ts_pct = ts_pct * 1.5 # 1.5x room for strong runners (tightened from 2.0x)
 
         if side == "buy":
-            # Stop loss - Only if not manual or if entry_price is set
-            if entry_price > 0 and current_price <= entry_price * (1 - sl_pct):
-                return True, f"stop loss hit ({sl_pct*100:.2f}%)"
+            # Stop loss
+            if entry_price > 0:
+                effective_sl_pct = 0.0020 if is_at_break_even else sl_pct # Use 0.20% buffer for BE to avoid noise
+                if current_price <= entry_price * (1 - effective_sl_pct):
+                    reason = "break-even stop hit" if is_at_break_even else f"stop loss hit ({sl_pct*100:.2f}%)"
+                    return True, reason
             # Trailing stop - Only once in enough profit
             if ts_pct > 0 and high_since_entry and entry_price > 0:
                 is_activated = (current_price >= entry_price * (1 + ts_activation_pct)) or (high_since_entry >= entry_price * (1 + ts_activation_pct))
@@ -543,8 +610,11 @@ class Strategy:
                 return True, f"take profit hit ({tp_pct*100:.2f}%)"
         else: # side == "short"
             # Stop loss (price went UP)
-            if entry_price > 0 and current_price >= entry_price * (1 + sl_pct):
-                return True, f"short stop loss hit ({sl_pct*100:.2f}%)"
+            if entry_price > 0:
+                effective_sl_pct = 0.0020 if is_at_break_even else sl_pct
+                if current_price >= entry_price * (1 + effective_sl_pct):
+                    reason = "short break-even stop hit" if is_at_break_even else f"short stop loss hit ({sl_pct*100:.2f}%)"
+                    return True, reason
             # Trailing stop (low since entry)
             low_since_entry = high_since_entry
             if ts_pct > 0 and low_since_entry and entry_price > 0:

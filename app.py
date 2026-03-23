@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import logging
 import zipfile
@@ -94,9 +95,91 @@ def authorize_bot():
         logger.error(f"Error authorizing bot: {e}")
         return jsonify({"ok": False, "error": str(e)})
 
+@app.route("/api/bot/rotate-token", methods=["POST"])
+def rotate_token():
+    """Generates a new random token and updates the auth file."""
+    try:
+        data = request.json or {}
+        token = data.get("token")
+        
+        # Verify current token before allowing rotation
+        if token == Config.AUTH_TOKEN:
+            import subprocess
+            result = subprocess.run(["python3", "generate_token.py"], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.info("Token ROTATED via Web HUD")
+                return jsonify({"ok": True, "message": "Token rotated. Please restart the bot to apply."})
+            else:
+                return jsonify({"ok": False, "error": f"Rotation failed: {result.stderr}"})
+        else:
+            return jsonify({"ok": False, "error": "Invalid current token"}), 401
+    except Exception as e:
+        logger.error(f"Error rotating token: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/bot/learn-youtube", methods=["POST"])
+def learn_youtube():
+    try:
+        data = request.json or {}
+        url = data.get("url")
+        token = data.get("token")
+        
+        # Verify token for security
+        if token != Config.AUTH_TOKEN:
+            return jsonify({"ok": False, "error": "Invalid token"}), 401
+            
+        if not url:
+            return jsonify({"ok": False, "error": "No URL provided"}), 400
+            
+        from learning import LearningEngine
+        le = LearningEngine(Config.TRADE_JOURNAL_FILE)
+        
+        # This will happen in a separate thread to not block the UI
+        import threading
+        def process_video():
+            success = le.learn_from_youtube(url)
+            if success:
+                logger.info(f"Successfully processed YouTube strategy: {url}")
+            else:
+                logger.error(f"Failed to process YouTube strategy: {url}")
+        
+        threading.Thread(target=process_video).start()
+        
+        return jsonify({"ok": True, "message": "YouTube learning started. The bot will analyze the video and evolve its strategy autonomously."})
+    except Exception as e:
+        logger.error(f"Error starting YouTube learning: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/bot/reading-session", methods=["POST"])
+def reading_session():
+    try:
+        data = request.json or {}
+        token = data.get("token")
+        
+        # Verify token for security
+        if token != Config.AUTH_TOKEN:
+            return jsonify({"ok": False, "error": "Invalid token"}), 401
+            
+        import subprocess
+        # Run the reading session script in the background
+        subprocess.Popen([sys.executable, "reading_session.py"])
+        
+        logger.info("Universal Reading Session TRIGGERED via Web HUD")
+        return jsonify({"ok": True, "message": "Reading session started. The bot is analyzing 25+ trading classics and will update its code autonomously."})
+    except Exception as e:
+        logger.error(f"Error starting reading session: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
 @app.route("/api/bot/kill", methods=["POST"])
 def kill_switch():
     try:
+        data = request.json or {}
+        token = data.get("token")
+        
+        # Verify token for security
+        if token != Config.AUTH_TOKEN:
+            return jsonify({"ok": False, "error": "Invalid token"}), 401
+
         from bot_state import BotStateStore
         store = BotStateStore(Config.BOT_STATE_FILE)
         state = store.load()

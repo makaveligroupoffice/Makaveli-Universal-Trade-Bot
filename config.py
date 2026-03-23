@@ -85,10 +85,17 @@ class Config:
         if s.strip()
     )
 
-    STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "1.5")) # Loosened from 0.50
-    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "3.0")) # Lowered from 4.0 to increase win rate
-    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "0.75")) # Loosened from 0.35
-    TRAILING_STOP_ACTIVATION_PCT: float = float(os.getenv("TRAILING_STOP_ACTIVATION_PCT", "0.5")) # Start trailing later
+    # Advanced Strategy Controls
+    MIN_ADX_TREND: float = float(os.getenv("MIN_ADX_TREND", "25.0"))
+    ATR_SL_MULTIPLIER: float = float(os.getenv("ATR_SL_MULTIPLIER", "2.0"))
+    ATR_TP_MULTIPLIER: float = float(os.getenv("ATR_TP_MULTIPLIER", "3.0"))
+    BREAK_EVEN_PROFIT_PCT: float = float(os.getenv("BREAK_EVEN_PROFIT_PCT", "0.75")) # Move SL to entry at 0.75% profit
+    ENABLE_DYNAMIC_ATR_EXITS: bool = os.getenv("ENABLE_DYNAMIC_ATR_EXITS", "true").lower() == "true"
+
+    STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "2.0")) # Loosened from 1.5 to handle volatility
+    TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "4.0")) # Increased to capture more profit on runners
+    TRAILING_STOP_PCT: float = float(os.getenv("TRAILING_STOP_PCT", "1.0")) # Loosened from 0.75
+    TRAILING_STOP_ACTIVATION_PCT: float = float(os.getenv("TRAILING_STOP_ACTIVATION_PCT", "1.0")) # Start trailing later (at 1% profit)
 
     # Intraday Liquidation
     INTRA_DAY_MODE_ONLY: bool = os.getenv("INTRA_DAY_MODE_ONLY", "true").lower() == "true"

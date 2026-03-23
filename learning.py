@@ -249,6 +249,55 @@ class LearningEngine:
 
         self.evolve_code(f"MANUAL_TRADE_LESSONS:\n{lessons_summary}")
 
+    def learn_from_youtube(self, url: str):
+        """Extract strategy from a YouTube video and evolve code."""
+        log.info(f"Learning Engine processing YouTube video: {url}")
+        
+        try:
+            from youtube_transcript_api import YouTubeTranscriptApi
+            import re
+
+            # Extract video ID
+            video_id_match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', url)
+            if not video_id_match:
+                log.error(f"Could not extract video ID from URL: {url}")
+                return False
+
+            video_id = video_id_match.group(1)
+            
+            # Fetch transcript
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+            full_text = " ".join([t['text'] for t in transcript_list])
+            
+            # Use AI to extract strategy
+            strategy_summary = self.ai.extract_strategy_from_transcript(full_text)
+            
+            if strategy_summary:
+                log.info(f"Successfully extracted strategy from YouTube video {video_id}")
+                
+                # Log lesson
+                lessons_path = "logs/lessons_learned.jsonl"
+                lesson = {
+                    "id": f"youtube_{video_id}",
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "youtube",
+                    "url": url,
+                    "lesson": strategy_summary
+                }
+                with open(lessons_path, "a") as f:
+                    f.write(json.dumps(lesson) + "\n")
+                
+                # Evolve code
+                self.evolve_code(f"YOUTUBE_TRADING_STRATEGY_LESSON:\n{strategy_summary}")
+                return True
+            else:
+                log.error("Failed to extract strategy from transcript via AI.")
+                return False
+
+        except Exception as e:
+            log.error(f"Error learning from YouTube: {e}")
+            return False
+
     def evolve_code(self, analysis_report: str):
         """
         Uses AI to rewrite strategy code based on performance analysis.

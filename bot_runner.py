@@ -910,7 +910,7 @@ class AutoTrader:
                 self._clear_position_state(symbol)
                 continue
 
-            bars = self.data.get_recent_bars(symbol, minutes=10)
+            bars = self.data.get_recent_bars(symbol, minutes=30) # Increased lookback for indicators
             latest_price = self.data.get_latest_mid_price(symbol)
             if not latest_price:
                 continue
@@ -922,6 +922,7 @@ class AutoTrader:
                 if current_extreme is None or latest_price > current_extreme:
                     pos_info["high_since_entry"] = latest_price
             else: # short
+                # For shorts, "high_since_entry" actually stores the LOWest price seen
                 if current_extreme is None or latest_price < current_extreme:
                     pos_info["high_since_entry"] = latest_price
             self._save_state()

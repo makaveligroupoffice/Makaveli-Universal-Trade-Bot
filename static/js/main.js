@@ -89,11 +89,18 @@ function toggleBot() {
 }
 
 function triggerKillSwitch() {
+    const token = prompt('Enter Authorization Token to confirm Kill Switch:');
+    if (!token) return;
+    
     if (!confirm('CRITICAL: This will stop the bot, cancel all orders, and close all positions. ARE YOU SURE?')) return;
     
     const log = document.getElementById('logFeed');
     log.innerHTML += `> TRIGGERING KILL SWITCH...<br>`;
-    fetch('/api/bot/kill', { method: 'POST' })
+    fetch('/api/bot/kill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+    })
         .then(res => res.json())
         .then(data => {
             if (data.ok) {
@@ -113,6 +120,77 @@ function promptAuthorization() {
     const log = document.getElementById('logFeed');
     log.innerHTML += `> AUTHORIZING BOT...<br>`;
     fetch('/api/bot/authorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+    }).then(res => res.json()).then(data => {
+        if (data.ok) {
+            log.innerHTML += `> SERVER: ${data.message}<br>`;
+        } else {
+            log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+        }
+        log.scrollTop = log.scrollHeight;
+    });
+}
+
+function rotateToken() {
+    const token = prompt('Enter Current Authorization Token to authorize rotation:');
+    if (!token) return;
+    
+    if (!confirm('This will generate a new random token and update the auth file. You will need to use the NEW token next time. CONTINUE?')) return;
+
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> REQUESTING TOKEN ROTATION...<br>`;
+    
+    fetch('/api/bot/rotate-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+    }).then(res => res.json()).then(data => {
+        if (data.ok) {
+            log.innerHTML += `> SERVER: ${data.message}<br>`;
+            alert('Token rotated successfully. Please restart the bot and check logs/auth.env for the new token.');
+        } else {
+            log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+        }
+        log.scrollTop = log.scrollHeight;
+    });
+}
+
+function learnFromYoutube() {
+    const url = prompt('Enter YouTube Video URL:');
+    if (!url) return;
+    
+    const token = prompt('Enter Authorization Token to authorize learning:');
+    if (!token) return;
+
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> REQUESTING YOUTUBE ANALYSIS...<br>`;
+    
+    fetch('/api/bot/learn-youtube', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url, token: token })
+    }).then(res => res.json()).then(data => {
+        if (data.ok) {
+            log.innerHTML += `> SERVER: ${data.message}<br>`;
+        } else {
+            log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+        }
+        log.scrollTop = log.scrollHeight;
+    });
+}
+
+function deepReadingSession() {
+    const token = prompt('Enter Authorization Token to authorize reading session:');
+    if (!token) return;
+
+    if (!confirm('The bot will analyze 25+ classic trading books and rewrite its core strategy. This takes time. CONTINUE?')) return;
+
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> STARTING DEEP READING SESSION...<br>`;
+    
+    fetch('/api/bot/reading-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: token })

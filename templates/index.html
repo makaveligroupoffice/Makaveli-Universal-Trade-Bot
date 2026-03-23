@@ -92,8 +92,13 @@
             <button onclick="triggerAction('scan')" class="cyber-panel bg-blue-900 bg-opacity-20 hover:bg-opacity-40 p-3 rounded uppercase font-bold text-xs transition-all">Manual Scan</button>
         </div>
 
-        <!-- Emergency & Auth -->
-        <div class="mt-6 grid grid-cols-2 gap-4">
+        <!-- AI & Strategy Learning -->
+        <div class="mt-6 grid grid-cols-1 gap-4 mb-2">
+            <button onclick="deepReadingSession()" class="cyber-panel bg-yellow-900 bg-opacity-20 hover:bg-opacity-40 border-yellow-500 p-3 rounded uppercase font-bold text-xs transition-all text-yellow-400">Deep Reading Session (25+ Books)</button>
+            <button onclick="learnFromYoutube()" class="cyber-panel bg-blue-900 bg-opacity-20 hover:bg-opacity-40 border-blue-500 p-3 rounded uppercase font-bold text-xs transition-all text-blue-400">Feed YouTube Strategy</button>
+            <button onclick="rotateToken()" class="cyber-panel bg-purple-900 bg-opacity-20 hover:bg-opacity-40 border-purple-500 p-3 rounded uppercase font-bold text-xs transition-all text-purple-400">Rotate Auth Token</button>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
             <button onclick="triggerKillSwitch()" class="cyber-panel bg-red-900 bg-opacity-40 hover:bg-opacity-60 border-red-500 p-3 rounded uppercase font-bold text-xs transition-all text-red-500">KILL SWITCH</button>
             <button onclick="promptAuthorization()" class="cyber-panel bg-yellow-900 bg-opacity-20 hover:bg-opacity-40 border-yellow-500 p-3 rounded uppercase font-bold text-xs transition-all text-yellow-500">AUTH TOKEN</button>
         </div>
