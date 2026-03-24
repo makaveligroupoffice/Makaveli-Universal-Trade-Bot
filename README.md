@@ -1,4 +1,4 @@
-# Universal Trade Bot 🚀
+# Makaveli Universal Trade Bot 🚀
 
 A professional-grade, automated day trading and investment bot for the Alpaca markets. Built with multi-strategy engines, multi-asset support, and advanced risk management to grow your portfolio consistently.
 
