@@ -15,7 +15,31 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
     - **Range Breakouts**: 20-bar highs with volume confirmation.
     - **Aggressive Momentum**: High-frequency plays for growth.
 - **Autonomous Evolution**: The bot analyzes its own performance and **autonomously upgrades its own code** and risk parameters to adapt to changing market conditions.
-- **News & Sentiment Awareness**: Integrated news filter that scans for high-impact headlines (lawsuits, investigations, etc.) to avoid "landmine" trades.
+- **Deep Reading & YouTube Learning**: 
+    - **YouTube Ingestion**: Feed the bot any trading video URL; it will analyze the transcript and implement the strategy into `strategy.py`.
+    - **Universal Knowledge Synthesis**: Synthesizes actionable rules from 25+ trading classics (e.g., *Reminiscences of a Stock Operator*) to refine its core logic.
+- **Advanced News Engine**: 
+    - **Macro Filtering**: Automatically blocks trading 15-30 minutes before/after major events like **CPI, FOMC, and NFP**.
+    - **Multi-Source Aggregation**: Pulls high-impact news from **Forex Factory, Trading Economics, and Investing.com**.
+- **Portfolio Brain (Meta-Risk Engine)**: 
+    - **Global Risk Cap**: Manages risk across all active bots and strategies (max 0.5% - 1% per trade).
+    - **Market DNA Profiling**: Adapts behavior per asset (BTC = trend-driven, Altcoins = volatility-driven).
+    - **Confidence Engine**: Only executes trades with a **75+ quality score** based on trend, volume, and liquidity alignment.
+- **Liquidity & Trap Detection (SMC)**: 
+    - **Smart Money Concepts**: Detects Liquidity Sweeps, Order Imbalance, and Fake Breakouts.
+    - **Liquidity Pool Mapping**: Hunts for equal highs/lows and stop clusters.
+- **Crypto Long-Term Investment**: 
+    - **Scan & Invest**: AI-driven evaluation of BTC, ETH, and SOL for long-term holding.
+    - **Withdrawal Alerts**: Automatically prompts "Withdraw to Tangem" when settled assets are ready for cold storage.
+- **Multi-Bot Scaling**: 
+    - Orchestrates specialized **Scalper, Swing, and Trend Follower** bots under a Master Risk Controller.
+    - **Heartbeat Monitoring**: Ensures 24/7 uptime with automated failover and error recovery.
+- **Advanced Licensing & Revocation**: 
+    - **Remote Kill Switch**: Allows the owner to revoke access remotely via a centralized license server if needed.
+    - **Master Auth Token**: Secured via `logs/auth.env` and required for all high-risk operations (Kill Switch, Authorization, Token Rotation).
+- **Weekly Fast Audit Reports**: 
+    - Generates a professional PDF/Text audit every Friday at market close.
+    - Tracks Risk, Entries, Exits, Performance (Win Rate, Profit Factor), and Protection status.
 - **Portfolio Optimization**:
     - **Kelly Criterion**: Dynamic position sizing based on win rate and reward/risk ratios.
     - **Multi-Timeframe Analysis**: Aligns 1-minute trades with 1-hour "Global Trend" filters.
@@ -57,7 +81,12 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
 - `webhook_server.py`: Listens for incoming trade signals (from TradingView or `remote_trade.py`).
 - `config.py`: Centralized configuration management.
 - `risk.py`: Logic for daily loss limits and position sizing.
+- `intelligence.py`: Confidence engine and market DNA profiling.
+- `multi_bot.py`: Multi-bot architecture and orchestrator.
+- `news_engine.py`: Macro news aggregator and economic calendar.
 - `strategy.py`: Technical analysis and entry/exit strategy definitions.
+- `license_manager.py`: Remote revocation and license status checks.
+- `crypto_investor.py`: Long-term crypto scanning and investment evaluation.
 - `broker_alpaca.py`: Integration with the Alpaca API.
 - `notifications.py`: Handler for Pushover and Discord alerts.
 - `remote_trade.py`: CLI tool for manual/remote trade execution.
@@ -77,7 +106,11 @@ pip install -r requirements.txt
 ```
 
 ### 3. Configuration
-Create a `.env` file in the project root and add your keys (never share this file!):
+1. **Security Setup (Master Token)**: Run the following to generate your `logs/auth.env` file. This token is required for all management operations.
+```bash
+python3 generate_token.py
+```
+2. **Environment Variables**: Create a `.env` file in the project root and add your keys (never share this file!):
 ```bash
 # Alpaca Keys
 ALPACA_KEY=your_key_here
@@ -86,15 +119,11 @@ ALPACA_PAPER=true
 
 # Security
 WEBHOOK_SECRET=your_bot_secret_here
+AUTH_TOKEN=your_token_from_logs_auth_env  # Or leave to load automatically
 
-# Notifications (Pushover)
-PUSHOVER_USER_KEY=your_user_key
-PUSHOVER_APP_TOKEN=your_app_token
-
-# Risk Settings
-USE_PERCENTAGE_RISK=true
-RISK_PCT_PER_TRADE=1.5
-MAX_DAILY_LOSS_PCT=5.0
+# Licensing
+LICENSE_ID=trial_user_001
+LICENSE_URL=https://.../status.json
 ```
 
 ### 4. Running the Bot
