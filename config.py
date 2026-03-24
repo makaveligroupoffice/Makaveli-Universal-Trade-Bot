@@ -135,6 +135,8 @@ class Config:
     VOLATILITY_SPIKE_KILL_SWITCH: bool = os.getenv("VOLATILITY_SPIKE_KILL_SWITCH", "true").lower() == "true"
     NEWS_SHOCK_PAUSE_MINUTES: int = int(os.getenv("NEWS_SHOCK_PAUSE_MINUTES", "30"))
     ECONOMIC_CALENDAR_FILTER: bool = os.getenv("ECONOMIC_CALENDAR_FILTER", "true").lower() == "true" # CPI, FOMC
+    ECONOMIC_CALENDAR_BUFFER_MINUTES: int = int(os.getenv("ECONOMIC_CALENDAR_BUFFER_MINUTES", "30")) # Block 30m before/after
+    NEWS_SOURCE_RANKING: tuple[str, ...] = tuple(s.strip() for s in os.getenv("NEWS_SOURCE_RANKING", "FOREX_FACTORY,TRADING_ECONOMICS,INVESTING_COM").split(",") if s.strip())
     KILL_SWITCH_CONSECUTIVE_LOSSES: int = int(os.getenv("KILL_SWITCH_CONSECUTIVE_LOSSES", "3"))
 
     # AI Layer

@@ -349,6 +349,24 @@ class AlpacaBroker(BrokerBase):
         except APIError:
             return None
 
+    def get_news(self, symbol: str, days: int = 1):
+        from market_data import MarketDataClient
+        return MarketDataClient().get_news(symbol, days=days)
+
+    def get_calendar(self, start_date: str, end_date: str):
+        """
+        Fetch economic calendar (high impact events).
+        Alpaca doesn't have a direct economic calendar API in the SDK, 
+        so we'll use their general market news or potentially a scraper/other API 
+        in the news_engine. For now, this is a placeholder that can be extended.
+        """
+        try:
+            # We can use the clock as a basic check if we want, 
+            # but real calendar needs external source.
+            return []
+        except Exception:
+            return []
+
     def get_clock(self):
         try:
             return self.client.get_clock()

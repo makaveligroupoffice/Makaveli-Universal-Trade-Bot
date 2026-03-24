@@ -1454,7 +1454,15 @@ class AutoTrader:
                     current_hhmm = int(clock.timestamp.strftime("%H%M"))
 
                 self.try_exit()
-                self.try_entry(current_hhmm=current_hhmm)
+                
+                # --- GLOBAL NEWS FILTER CHECK ---
+                from news_engine import NewsEngine
+                safe, reason = NewsEngine.is_market_safe(None, self.broker)
+                if not safe:
+                    log.warning(f"Global News Filter Active: {reason}. Skipping entries.")
+                else:
+                    self.try_entry(current_hhmm=current_hhmm)
+                    
                 self._reset_failures()
 
                 if single_cycle:

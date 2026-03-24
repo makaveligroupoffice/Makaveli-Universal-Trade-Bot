@@ -28,3 +28,11 @@ class BrokerBase(ABC):
     @abstractmethod
     def cancel_all_orders(self):
         pass
+
+    @abstractmethod
+    def get_news(self, symbol: str, days: int = 1):
+        pass
+
+    @abstractmethod
+    def get_calendar(self, start_date: str, end_date: str):
+        pass

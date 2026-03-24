@@ -540,19 +540,16 @@ class Strategy:
         Avoid trading if there's high-impact news or too many recent news items (excessive volatility).
         Also checks for recent technical news spikes (ATR/Volume spikes).
         Blocks trading during major economic releases (CPI, FOMC).
+        Integrates with Forex Factory, Trading Economics, and Investing.com logic.
         """
         if Config.ENABLE_NEWS_FILTER is False:
             return True
 
-        # 0. Economic Calendar / Major Releases Check
-        if getattr(Config, "ECONOMIC_CALENDAR_FILTER", True):
-            news = news_list if news_list is not None else (market_data_client.get_news(symbol, days=1) if market_data_client else [])
-            major_events = ["cpi", "fomc", "fed ", "interest rate", "inflation", "non-farm payroll", "nfp", "gdp"]
-            
-            for item in news:
-                headline_lower = item.headline.lower()
-                if any(event in headline_lower for event in major_events):
-                    return False
+        # 0. Economic Calendar / Major Releases Check via NewsEngine
+        from news_engine import NewsEngine
+        safe, reason = NewsEngine.is_market_safe(symbol, market_data_client)
+        if not safe:
+            return False
 
         # 1. Technical Spike Check (ATR/Volume)
         if bars is not None:

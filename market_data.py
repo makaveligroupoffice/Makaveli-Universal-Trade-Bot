@@ -203,7 +203,11 @@ class MarketDataClient:
         )
         
         try:
-            return client.get_news(request).news
+            response = client.get_news(request)
+            # If it's the newer SDK, it might be directly in response or .news
+            if hasattr(response, 'news'):
+                return response.news
+            return response
         except Exception as e:
             print(f"Error fetching news: {e}")
             return []
