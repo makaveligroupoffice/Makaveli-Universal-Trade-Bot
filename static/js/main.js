@@ -26,6 +26,20 @@ function updateStats() {
                 if (data.profit_factor) document.getElementById('profitFactor').innerText = data.profit_factor.toFixed(2);
                 document.getElementById('system-time').innerText = `LAST SYNC: ${new Date().toLocaleTimeString()}`;
 
+                // Update License Alert
+                const licenseAlert = document.getElementById('licenseAlert');
+                if (data.license_revoked) {
+                    licenseAlert.classList.remove('hidden');
+                    document.getElementById('licenseIdDisplay').innerText = `ID: ${data.license_id}`;
+                    botStatus.innerText = 'REVOKED';
+                    botStatus.className = 'text-xl font-bold text-red-500 glitch-text';
+                    document.getElementById('botToggleButton').classList.add('opacity-50', 'pointer-events-none');
+                    botState = 'REVOKED';
+                } else {
+                    licenseAlert.classList.add('hidden');
+                    document.getElementById('botToggleButton').classList.remove('opacity-50', 'pointer-events-none');
+                }
+
                 // Update Bot Engine Toggle UI
                 const isEnabled = data.bot_enabled;
                 const toggleLabel = document.getElementById('botToggleLabel');
@@ -222,6 +236,33 @@ function investCrypto() {
     }).then(res => res.json()).then(data => {
         if (data.ok) {
             log.innerHTML += `> SERVER: ${data.message}<br>`;
+        } else {
+            log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+        }
+        log.scrollTop = log.scrollHeight;
+    });
+}
+
+function checkLicense() {
+    const token = prompt('Enter Authorization Token to check license:');
+    if (!token) return;
+
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> REQUESTING REMOTE LICENSE VERIFICATION...<br>`;
+    
+    fetch('/api/license/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+    }).then(res => res.json()).then(data => {
+        if (data.ok) {
+            log.innerHTML += `> SERVER: ${data.message} (VALID: ${data.is_valid})<br>`;
+            if (!data.is_valid) {
+                alert("CRITICAL: LICENSE REVOKED BY SERVER!");
+                location.reload();
+            } else {
+                alert("License is valid and active.");
+            }
         } else {
             log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
         }

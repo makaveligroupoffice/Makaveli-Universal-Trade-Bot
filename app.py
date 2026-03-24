@@ -75,12 +75,33 @@ def get_stats():
             "equity": equity,
             "operational_state": bot_state.get("operational_state", "SCANNING"),
             "bot_enabled": bot_state.get("enabled", True),
+            "license_revoked": bot_state.get("license_revoked", False),
+            "license_id": bot_state.get("license_id", "UNKNOWN"),
             "positions": pos_data,
             "sharpe_ratio": perf.get("sharpe_ratio"),
             "profit_factor": perf.get("profit_factor")
         })
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/license/check", methods=["POST"])
+def check_license_now():
+    """Manually triggers a license check."""
+    try:
+        data = request.json or {}
+        token = data.get("token")
+        if token != Config.AUTH_TOKEN:
+            return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+        from license_manager import LicenseManager
+        is_valid = LicenseManager.verify_license()
+        return jsonify({
+            "ok": True,
+            "is_valid": is_valid,
+            "message": "License check completed." if is_valid else "LICENSE REVOKED BY SERVER"
+        })
+    except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/authorize", methods=["POST"])

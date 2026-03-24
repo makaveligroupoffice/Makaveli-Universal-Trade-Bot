@@ -15,6 +15,8 @@ class BotStateStore:
         return {
             "enabled": True,  # Global toggle for the trading engine
             "kill_switch_active": False,  # Emergency stop flag
+            "license_revoked": False,  # Has the license been revoked remotely?
+            "license_id": Config.LICENSE_ID,
             "sharing_authorized": False,  # Has a valid token been used?
             "positions": {},  # symbol -> {entry_price, high_since_entry, side, entry_time}
             "pending_orders": {},  # order_id -> {symbol, side, submitted_at}

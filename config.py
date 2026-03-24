@@ -11,6 +11,9 @@ class Config:
     # Security
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "change_me")
     AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "admin-token-12345")
+    LICENSE_URL: str = os.getenv("LICENSE_URL", "https://raw.githubusercontent.com/makaveligroupoffice/license_server/main/status.json")
+    LICENSE_ID: str = os.getenv("LICENSE_ID", "trial_user_001")
+    LICENSE_CHECK_INTERVAL_SECONDS: int = int(os.getenv("LICENSE_CHECK_INTERVAL_SECONDS", "3600"))
     API_KEY_ENCRYPTION_KEY: str = os.getenv("API_KEY_ENCRYPTION_KEY", "secure-encryption-key-12345")
     IP_WHITELIST: tuple[str, ...] = tuple(s.strip() for s in os.getenv("IP_WHITELIST", "127.0.0.1").split(",") if s.strip())
 

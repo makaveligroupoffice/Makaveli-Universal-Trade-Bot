@@ -1365,7 +1365,14 @@ class AutoTrader:
     def run(self, single_cycle: bool = False):
         # 1. License / Sharing Authorization Check
         try:
+            from license_manager import LicenseManager
+            LicenseManager.verify_license() # Remote check
+            
             state_raw = self.state_store.load()
+            if state_raw.get("license_revoked", False):
+                log.critical("LICENSE HAS BEEN REVOKED. Terminating bot.")
+                sys.exit(1)
+                
             if not state_raw.get("sharing_authorized", False):
                 # If not authorized, we check if an AUTH_TOKEN is provided in environment
                 # that matches our Config.AUTH_TOKEN. This is a one-time "activation".
@@ -1401,10 +1408,17 @@ class AutoTrader:
         import strategy
         last_strategy_mtime = os.path.getmtime("strategy.py")
         last_update_check = 0
+        last_license_check = time.time()
         last_log_submission = time.time() # Initial timestamp
 
         while True:
             try:
+                # Periodic License Check
+                if time.time() - last_license_check > Config.LICENSE_CHECK_INTERVAL_SECONDS:
+                    from license_manager import LicenseManager
+                    LicenseManager.verify_license()
+                    last_license_check = time.time()
+
                 # Check global enable switch and kill switch
                 try:
                     state_raw = self.state_store.load()
