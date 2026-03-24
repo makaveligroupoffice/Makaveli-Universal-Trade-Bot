@@ -14,34 +14,18 @@ logging.basicConfig(
 
 def run_eod_report():
     try:
-        broker = AlpacaBroker()
-        clock = broker.get_clock()
+        from bot_runner import AutoTrader
+        # Use AutoTrader's built-in reporting logic for consistency
+        trader = AutoTrader()
+        trader._send_daily_report()
+        trader._send_quality_analysis()
+        trader._send_bot_health_report()
         
-        # If market is still open, we might want to wait or check how long until it closes.
-        # But this script is intended to be called at EOD.
-        
-        today_str = datetime.now().strftime('%Y-%m-%dT00:00:00')
-        stats = calculate_today_stats(start_time=today_str)
-        
-        if not stats or stats['total_trades'] == 0:
-            report = f"📅 EOD Summary ({datetime.now().strftime('%Y-%m-%d')})\nNo trades executed today."
-        else:
-            report = (
-                f"🏁 EOD Performance Report ({datetime.now().strftime('%Y-%m-%d')})\n"
-                f"-----------------------------------\n"
-                f"📈 Win Rate: {stats['win_rate']:.2f}%\n"
-                f"💰 Net PnL: ${stats['net_pnl']:.2f}\n"
-                f"📊 Profit Factor: {stats['profit_factor']:.2f}\n"
-                f"✅ Wins: {stats['wins']} | ❌ Losses: {stats['losses']}\n"
-                f"💵 Gross Profit: ${stats['gross_profit']:.2f}\n"
-                f"💸 Gross Loss: ${stats['gross_loss']:.2f}\n"
-                f"📏 Avg Win: ${stats['avg_win']:.2f} | Avg Loss: ${stats['avg_loss']:.2f}\n"
-                f"-----------------------------------\n"
-            )
-
-        logging.info(f"Generated EOD report:\n{report}")
-        send_notification(report, title="TradeBot EOD Performance")
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] EOD Report sent.")
+        # Check if it's the end of the week (Friday)
+        if datetime.now().weekday() == 4:
+            trader._send_weekly_report()
+            
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] EOD Comprehensive Reports sent.")
 
     except Exception as e:
         logging.error(f"Error generating EOD report: {e}")

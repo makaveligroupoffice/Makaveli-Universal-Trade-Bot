@@ -18,6 +18,12 @@ class PerformanceAnalyzer:
         trades = []
         cutoff = datetime.now() - timedelta(days=days)
         
+        strategy_performance = {}
+        asset_performance = {}
+        scores_90_plus = []
+        scores_75_89 = []
+        scores_below_75 = []
+        
         try:
             with open(self.journal_path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -25,6 +31,29 @@ class PerformanceAnalyzer:
                     ts = datetime.fromisoformat(entry["timestamp"])
                     if ts > cutoff and entry["event_type"] in ["sell_filled", "cover_filled"]:
                         trades.append(entry)
+                        
+                        # Strategy breakdown
+                        reason = entry.get("reason", "Unknown")
+                        strat = "Unknown"
+                        for s in Config.ACTIVE_STRATEGIES:
+                            if s in reason.upper():
+                                strat = s
+                                break
+                        strategy_performance[strat] = strategy_performance.get(strat, 0.0) + entry.get("pnl", 0.0)
+                        
+                        # Asset breakdown
+                        symbol = entry.get("symbol", "N/A")
+                        asset_performance[symbol] = asset_performance.get(symbol, 0.0) + entry.get("pnl", 0.0)
+                        
+                        # Score breakdown
+                        score = entry.get("context", {}).get("score", 0)
+                        if score >= 90:
+                            scores_90_plus.append(entry.get("pnl", 0.0))
+                        elif score >= 75:
+                            scores_75_89.append(entry.get("pnl", 0.0))
+                        else:
+                            scores_below_75.append(entry.get("pnl", 0.0))
+
         except Exception as e:
             log.error(f"Error reading journal: {e}")
             return None
@@ -41,6 +70,34 @@ class PerformanceAnalyzer:
         win_rate = win_count / len(trades)
         profit_factor = (win_count * avg_win) / (loss_count * avg_loss) if (loss_count * avg_loss) > 0 else 999
         
+        # Best/Worst trade
+        best_trade = max(t.get("pnl", 0) for t in trades)
+        worst_trade = min(t.get("pnl", 0) for t in trades)
+
+        # Best/Worst Strategy
+        best_strategy = max(strategy_performance, key=strategy_performance.get) if strategy_performance else "N/A"
+        worst_strategy = min(strategy_performance, key=strategy_performance.get) if strategy_performance else "N/A"
+
+        # Best/Worst Asset
+        best_asset = max(asset_performance, key=asset_performance.get) if asset_performance else "N/A"
+        worst_asset = min(asset_performance, key=asset_performance.get) if asset_performance else "N/A"
+
+        # Quality stats
+        all_scores = [t.get("context", {}).get("score", 0) for t in trades]
+        avg_score = sum(all_scores) / len(all_scores) if all_scores else 0
+        count_above_threshold = sum(1 for s in all_scores if s >= Config.MIN_TRADE_QUALITY_SCORE)
+        count_below_threshold = sum(1 for s in all_scores if s < Config.MIN_TRADE_QUALITY_SCORE)
+
+        # Simplified drawdown %
+        max_dd_pct = 0
+        peak = Config.STARTING_EQUITY
+        current = Config.STARTING_EQUITY
+        for t in trades:
+            current += t.get("pnl", 0)
+            if current > peak: peak = current
+            dd = (peak - current) / peak * 100
+            if dd > max_dd_pct: max_dd_pct = dd
+
         # Calculate Sharpe Ratio (simplified)
         returns = [t.get("pnl", 0) / Config.MAX_POSITION_VALUE_DOLLARS for t in trades]
         import numpy as np
@@ -58,22 +115,38 @@ class PerformanceAnalyzer:
             current_eq += t.get("pnl", 0)
             equity_curve.append(current_eq)
         
-        peak = -999999
+        peak_val = -999999
         max_dd = 0
         for val in equity_curve:
-            if val > peak: peak = val
-            dd = peak - val
+            if val > peak_val: peak_val = val
+            dd = peak_val - val
             if dd > max_dd: max_dd = dd
 
         analysis = {
             "win_rate": win_rate,
+            "win_count": win_count,
+            "loss_count": loss_count,
             "total_pnl": total_pnl,
             "total_trades": len(trades),
             "profit_factor": profit_factor,
             "sharpe_ratio": sharpe_ratio,
             "max_drawdown": max_dd,
+            "max_drawdown_pct": max_dd_pct,
             "avg_win": avg_win,
             "avg_loss": avg_loss,
+            "best_trade": best_trade,
+            "worst_trade": worst_trade,
+            "best_strategy": best_strategy,
+            "worst_strategy": worst_strategy,
+            "best_asset": best_asset,
+            "worst_asset": worst_asset,
+            "strategy_performance": strategy_performance,
+            "avg_score": avg_score,
+            "count_above_threshold": count_above_threshold,
+            "count_below_threshold": count_below_threshold,
+            "pnl_90_plus": sum(scores_90_plus),
+            "pnl_75_89": sum(scores_75_89),
+            "pnl_below_75": sum(scores_below_75),
             "win_loss_ratio": avg_win / avg_loss if avg_loss > 0 else 0,
             "recommendations": []
         }
@@ -178,30 +251,106 @@ class PerformanceAnalyzer:
 
         return "\n".join(report)
 
-    def generate_report(self, days: int = 30) -> str:
+    def generate_report(self, days: int = 1, account_info: dict = None, market_condition: str = "Unknown") -> str:
         analysis = self.analyze_recent_trades(days=days)
         if not analysis:
-            return "No trading data available for the period."
+            return f"DAILY TRADING REPORT\n\nDate: {datetime.now().strftime('%Y-%m-%d')}\n\nNo trading data available for today."
+
+        balance = account_info.get('equity', 0.0) if account_info else 0.0
+        starting_balance = Config.STARTING_EQUITY
+        pnl = analysis['total_pnl']
+        percent_change = (pnl / starting_balance * 100) if starting_balance > 0 else 0
+
+        # Strategies used breakdown
+        strategy_breakdown = ""
+        # We need to extract strategy performance from trades
+        # analysis['strategy_performance'] can be added to analyze_recent_trades
+        if 'strategy_performance' in analysis:
+            for strat, spnl in analysis['strategy_performance'].items():
+                strategy_breakdown += f"- {strat}: ${spnl:.2f}\n"
 
         report = [
-            f"📊 Performance Report (Last {days} Days)",
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            f"• Total Trades:   {analysis['total_trades']}",
-            f"• Win Rate:       {analysis['win_rate']*100:.1f}%",
-            f"• Total PnL:      ${analysis['total_pnl']:.2f}",
-            f"• Profit Factor:  {analysis['profit_factor']:.2f}",
-            f"• Max Drawdown:   ${analysis['max_drawdown']:.2f}",
-            f"• Avg Win:        ${analysis['avg_win']:.2f}",
-            f"• Avg Loss:       ${analysis['avg_loss']:.2f}",
-            f"• W/L Ratio:      {analysis['win_loss_ratio']:.2f}",
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            "DAILY TRADING REPORT",
+            "",
+            f"Date: {datetime.now().strftime('%Y-%m-%d')}",
+            "",
+            f"Account Balance: ${balance:,.2f}",
+            f"Starting Balance: ${starting_balance:,.2f}",
+            "",
+            f"Net P/L: ${pnl:.2f} ({percent_change:+.2f}%)",
+            "",
+            f"Trades Taken: {analysis['total_trades']}",
+            f"Wins: {analysis['win_count']}",
+            f"Losses: {analysis['loss_count']}",
+            f"Win Rate: {analysis['win_rate']*100:.2f}%",
+            "",
+            f"Avg Win: ${analysis['avg_win']:.2f}",
+            f"Avg Loss: ${analysis['avg_loss']:.2f}",
+            "",
+            f"Best Trade: ${analysis.get('best_trade', 0):.2f}",
+            f"Worst Trade: ${analysis.get('worst_trade', 0):.2f}",
+            "",
+            f"Max Drawdown Today: {analysis.get('max_drawdown_pct', 0):.2f}%",
+            "",
+            "Strategies Used:",
+            strategy_breakdown.strip() if strategy_breakdown else "- N/A",
+            "",
+            "Market Condition:",
+            f"- {market_condition}",
+            "",
+            "Notes:",
+            f"- {analysis.get('recommendations', ['No specific insights for today.'])[0]}"
         ]
         
-        if analysis["recommendations"]:
-            report.append("💡 Recommendations:")
-            for rec in analysis["recommendations"]:
-                report.append(f"  - {rec}")
-                
+        return "\n".join(report)
+
+    def generate_weekly_report(self) -> str:
+        analysis = self.analyze_recent_trades(days=7)
+        if not analysis:
+            return "WEEKLY REPORT\n\nNo trading data available for this week."
+
+        report = [
+            "WEEKLY REPORT",
+            "",
+            f"Total Profit: ${analysis['total_pnl']:.2f}",
+            f"Win Rate: {analysis['win_rate']*100:.2f}%",
+            "",
+            f"Best Strategy: {analysis.get('best_strategy', 'N/A')}",
+            f"Worst Strategy: {analysis.get('worst_strategy', 'N/A')}",
+            "",
+            f"Best Asset: {analysis.get('best_asset', 'N/A')}",
+            f"Worst Asset: {analysis.get('worst_asset', 'N/A')}",
+            "",
+            f"Max Drawdown: {analysis.get('max_drawdown_pct', 0):.2f}%",
+            "",
+            f"Total Trades: {analysis['total_trades']}",
+            "",
+            "Insights:",
+            f"- {analysis.get('recommendations', ['Maintain discipline and follow the strategy.'])[0]}"
+        ]
+        return "\n".join(report)
+
+    def generate_quality_analysis(self) -> str:
+        analysis = self.analyze_recent_trades(days=30)
+        if not analysis:
+            return "TRADE QUALITY ANALYSIS\n\nNo recent data for quality analysis."
+
+        report = [
+            "TRADE QUALITY ANALYSIS",
+            "",
+            f"Average Trade Score: {analysis.get('avg_score', 0):.1f}",
+            "",
+            f"Trades Above Threshold: {analysis.get('count_above_threshold', 0)}",
+            f"Trades Below Threshold: {analysis.get('count_below_threshold', 0)}",
+            "",
+            "Performance by Score:",
+            f"- 90+ score → ${analysis.get('pnl_90_plus', 0):.2f}",
+            f"- 75–89 → ${analysis.get('pnl_75_89', 0):.2f}",
+            f"- Below 75 → ${analysis.get('pnl_below_75', 0):.2f}",
+            "",
+            "Insight:",
+            "- Low score trades are underperforming" if analysis.get('pnl_below_75', 0) < 0 else "- Strategy is performing consistently across scores."
+        ]
         return "\n".join(report)
 
     def get_suggested_config(self, current_dynamic_config: dict):

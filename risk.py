@@ -49,24 +49,40 @@ class RiskManager:
         with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(self.state, f, indent=2)
 
-    def process_pnl_withdrawals(self, daily_pnl: float, notify_func=None):
+    def process_pnl_withdrawals(self, daily_pnl: float, current_balance: float = 0.0, notify_func=None):
         """Checks if PnL thresholds are met and alerts/records for withdrawal."""
-        if daily_pnl <= Config.PROFIT_WITHDRAWAL_THRESHOLD_DOLLARS:
+        # Check if threshold exists in Config, else use default 50
+        threshold = getattr(Config, "PROFIT_WITHDRAWAL_THRESHOLD_DOLLARS", 50.0)
+        if daily_pnl <= threshold:
             return
             
-        trading_share = daily_pnl * (Config.PROFIT_SPLIT_TRADING_PCT / 100.0)
-        vault_share = daily_pnl * (Config.PROFIT_SPLIT_COLD_STORAGE_PCT / 100.0)
+        trading_share = current_balance * (getattr(Config, "PROFIT_SPLIT_TRADING_PCT", 70.0) / 100.0)
+        vault_share = current_balance * (getattr(Config, "PROFIT_SPLIT_COLD_STORAGE_PCT", 30.0) / 100.0)
         
-        msg = (f"🔥 VAULT TRANSFER ALERT\n"
-               f"Daily Profit: ${daily_pnl:.2f}\n"
-               f"Move to Tangem (30%): ${vault_share:.2f}\n"
-               f"Keep in Trading (70%): ${trading_share:.2f}")
+        # Requested Report Format: PROFIT ALERT — WITHDRAWAL READY
+        report = [
+            "PROFIT ALERT — WITHDRAWAL READY",
+            "",
+            f"Current Balance: ${current_balance:.2f}",
+            f"Profit Above Threshold: ${daily_pnl:.2f}",
+            "",
+            "Suggested Action:",
+            "Transfer profits to cold storage (Tangem)",
+            "",
+            f"Recommended Amount: ${vault_share:.2f}",
+            "",
+            "Status:",
+            f"- Trading Capital: ${trading_share:.2f}",
+            f"- Vault Capital: ${vault_share:.2f}"
+        ]
+        
+        msg = "\n".join(report)
                
         if notify_func:
             notify_func(msg)
             
         # Record in audit trail
-        audit_msg = f"Vault transfer suggested: ${vault_share:.2f} (30% of ${daily_pnl:.2f})"
+        audit_msg = f"Vault transfer suggested: ${vault_share:.2f} (30% of ${current_balance:.2f})"
         self.state["last_vault_transfer"] = datetime.now().isoformat()
         self.state["last_vault_amount"] = vault_share
         self._save_state()
@@ -77,7 +93,15 @@ class RiskManager:
             # Process vault transfer before resetting daily
             daily_pnl = float(self.state.get("daily_pnl", 0.0))
             if daily_pnl > 0:
-                 self.process_pnl_withdrawals(daily_pnl)
+                 # We need current balance here. In _roll_day_if_needed we don't have it easily.
+                 # But we can use Config.STARTING_EQUITY + daily_pnl as estimate if needed, 
+                 # or just daily_pnl.
+                 from broker_alpaca import AlpacaBroker
+                 try:
+                     balance = AlpacaBroker().get_account_equity()
+                 except:
+                     balance = Config.STARTING_EQUITY + daily_pnl
+                 self.process_pnl_withdrawals(daily_pnl, current_balance=balance)
 
             old_peak = self.state.get("peak_equity", Config.STARTING_EQUITY)
             old_weekly_pnl = self.state.get("weekly_pnl", 0.0)
@@ -303,6 +327,26 @@ class RiskManager:
         daily_pnl = float(self.state.get("daily_pnl", 0.0))
         if daily_pnl < 0 and abs(daily_pnl) >= max_daily_loss:
             # HARD SHUTDOWN
+            alert_id = f"daily_loss_limit_{self._today_str()}"
+            if not self.seen_alert(alert_id):
+                from bot_runner import log, send_notification
+                report = [
+                    "RISK ALERT",
+                    "",
+                    "Daily Loss Limit Reached / Approaching",
+                    "",
+                    f"Current Loss: ${abs(daily_pnl):.2f}",
+                    f"Max Allowed: ${max_daily_loss:.2f}",
+                    "",
+                    "Bot Status:",
+                    "- PAUSED",
+                    "",
+                    "Action:",
+                    "- Trading will stop if loss exceeds limit"
+                ]
+                msg = "\n".join(report)
+                send_notification(msg, title="RISK ALERT: DAILY LOSS")
+                self.mark_alert_seen(alert_id)
             return False
             
         # Weekly Loss

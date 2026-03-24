@@ -214,9 +214,87 @@ class AutoTrader:
         """Generates and sends a comprehensive performance report."""
         from performance import PerformanceAnalyzer
         analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
-        report = analyzer.generate_report(days=1)
+        
+        account = self.broker.get_account()
+        account_info = {"equity": float(getattr(account, "equity", Config.STARTING_EQUITY))}
+        
+        # Get market condition
+        from intelligence import MarketRegimeIntelligence
+        # We need some bars to get regime, use SPY or a common symbol
+        bars = self.data.get_recent_bars("SPY", minutes=30)
+        market_condition = MarketRegimeIntelligence.get_current_regime(bars) if bars else "Unknown"
+        
+        report = analyzer.generate_report(days=1, account_info=account_info, market_condition=market_condition)
         log.info("Sending daily performance report...")
-        send_notification(report, title="📈 Daily Performance Summary")
+        send_notification(report, title="📈 DAILY TRADING REPORT")
+
+    def _send_weekly_report(self):
+        """Generates and sends a weekly performance report."""
+        from performance import PerformanceAnalyzer
+        analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
+        report = analyzer.generate_weekly_report()
+        log.info("Sending weekly performance report...")
+        send_notification(report, title="📊 WEEKLY REPORT")
+
+    def _send_quality_analysis(self):
+        """Generates and sends a trade quality analysis report."""
+        from performance import PerformanceAnalyzer
+        analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
+        report = analyzer.generate_quality_analysis()
+        log.info("Sending trade quality analysis...")
+        send_notification(report, title="🧠 TRADE QUALITY ANALYSIS")
+
+    def _send_bot_health_report(self):
+        """Generates and sends a bot health status report."""
+        # 1. API Status
+        api_status = "CONNECTED"
+        try:
+            self.broker.get_account()
+        except:
+            api_status = "ERROR"
+        
+        # 2. Last Trade Time
+        last_trade_time = "N/A"
+        try:
+            with open(Config.TRADE_JOURNAL_FILE, "r") as f:
+                lines = f.readlines()
+                if lines:
+                    last_trade_time = json.loads(lines[-1]).get("timestamp", "N/A")
+        except:
+            pass
+
+        # 3. Execution Errors
+        exec_errors = self.state.get("consecutive_failures", 0)
+        
+        # 4. Latency (Estimate)
+        import time
+        start = time.time()
+        self.broker.get_clock()
+        latency_ms = int((time.time() - start) * 1000)
+
+        system_status = "HEALTHY"
+        if api_status == "ERROR" or exec_errors > 2:
+            system_status = "CRITICAL"
+        elif latency_ms > 500:
+            system_status = "WARNING"
+
+        report = [
+            "BOT HEALTH STATUS",
+            "",
+            f"API Status: {api_status}",
+            f"Last Trade Time: {last_trade_time}",
+            "",
+            f"Execution Errors: {exec_errors}",
+            f"Missed Trades: {self.state.get('missed_trades', 0)}",
+            "",
+            f"Latency: {latency_ms}ms",
+            "",
+            f"System Status: {system_status}"
+        ]
+        
+        msg = "\n".join(report)
+        log.info("Sending bot health report...")
+        send_notification(msg, title="🛠️ BOT HEALTH STATUS")
 
     @staticmethod
     def _now_ts() -> float:
@@ -1012,6 +1090,11 @@ class AutoTrader:
                 from bot_state import BotStateStore
                 BotStateStore(Config.BOT_STATE_FILE).log_action(f"{action.upper()} ENTRY", f"symbol={symbol} qty={qty} reason={reason}")
 
+                # Confidence and Trade Score
+                from intelligence import ConfidenceEngine
+                score_data = ConfidenceEngine.calculate_scores(bars, reason, self.risk)
+                score = score_data.get("score", 0)
+
                 self.trade_journal.record(
                     f"{action}_submitted",
                     {
@@ -1021,11 +1104,40 @@ class AutoTrader:
                         "limit_price": limit_price,
                         "reason": reason,
                         "order_id": oid,
+                        "context": {
+                            "score": score,
+                            "market_condition": market_regime
+                        }
                     },
                 )
                 self._bump_summary("buys_submitted" if action == "buy" else "sells_submitted")
-                msg = f"{action.upper()} submitted | symbol={symbol} qty={qty} order_id={oid}"
-                log.info(msg)
+                
+                # Requested Report Format: TRADE EXECUTED
+                risk_amount = (qty * latest_price) * (sl_pct)
+                risk_percent = sl_pct * 100
+                
+                report = [
+                    "TRADE EXECUTED",
+                    "",
+                    f"Asset: {symbol}",
+                    f"Type: {action.upper()}",
+                    f"Strategy: {reason}",
+                    "",
+                    f"Entry: ${latest_price:.2f}",
+                    f"Stop Loss: ${stop_loss_price:.2f}",
+                    f"Take Profit: ${take_profit_price:.2f}",
+                    "",
+                    f"Risk: ${risk_amount:.2f} ({risk_percent:.2f}%)",
+                    "",
+                    f"Trade Score: {score}/100",
+                    f"Market Condition: {market_regime}",
+                    "",
+                    "Reason:",
+                    f"- {reason}"
+                ]
+                
+                msg = "\n".join(report)
+                log.info(f"{action.upper()} submitted | symbol={symbol} qty={qty} order_id={oid}")
                 send_notification(msg, title=f"Trade Bot {action.upper()}")
                 return # only one entry per loop
             except Exception as e:
@@ -1177,6 +1289,27 @@ class AutoTrader:
                 }
                 self._save_state()
 
+                # Calculate PnL and R:R for TRADE CLOSED report
+                final_pnl = 0.0
+                achieved_rr = 0.0
+                sl_val = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if self.dynamic_config else Config.STOP_LOSS_PCT) / 100.0
+                if entry_price > 0:
+                    if side == "buy":
+                        final_pnl = (latest_price - entry_price) * exit_qty
+                        risk_val = entry_price * sl_val
+                        achieved_rr = (latest_price - entry_price) / risk_val if risk_val > 0 else 0
+                    else:
+                        final_pnl = (entry_price - latest_price) * exit_qty
+                        risk_val = entry_price * sl_val
+                        achieved_rr = (entry_price - latest_price) / risk_val if risk_val > 0 else 0
+
+                duration_str = "N/A"
+                if entry_time_dt:
+                    duration = datetime.now() - entry_time_dt
+                    duration_str = str(duration).split('.')[0]
+
+                score = pos_info.get("context", {}).get("score", 0)
+
                 self.trade_journal.record(
                     f"{action}_submitted",
                     {
@@ -1184,11 +1317,36 @@ class AutoTrader:
                         "exit_est": latest_price,
                         "reason": exit_reason,
                         "order_id": oid,
+                        "pnl": final_pnl,
+                        "rr_ratio": achieved_rr,
+                        "duration": duration_str
                     },
                 )
                 self._bump_summary("sells_submitted" if action == "sell" else "buys_submitted")
-                msg = f"{action.upper()} submitted | symbol={symbol} order_id={oid} reason={exit_reason}"
-                log.info(msg)
+                
+                # Requested Report Format: TRADE CLOSED
+                report = [
+                    "TRADE CLOSED",
+                    "",
+                    f"Asset: {symbol}",
+                    f"Result: {'WIN' if final_pnl > 0 else 'LOSS'}",
+                    "",
+                    f"Entry: ${entry_price:.2f}",
+                    f"Exit: ${latest_price:.2f}",
+                    "",
+                    f"P/L: ${final_pnl:.2f}",
+                    f"R:R Achieved: {achieved_rr:.2f}",
+                    "",
+                    f"Duration: {duration_str}",
+                    "",
+                    "Exit Reason:",
+                    f"- {exit_reason}",
+                    "",
+                    f"Was this A+ setup? {'Yes' if score >= 90 else 'No'}"
+                ]
+                
+                msg = "\n".join(report)
+                log.info(f"{action.upper()} submitted | symbol={symbol} order_id={oid} reason={exit_reason}")
                 send_notification(msg, title=f"Trade Bot {action.upper()}")
             except Exception as e:
                 self._record_failure(f"Exit failed for {symbol}", e)
