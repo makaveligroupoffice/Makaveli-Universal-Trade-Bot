@@ -158,6 +158,9 @@ class Config:
     # Advanced Portfolio Management
     KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.5"))
     ENABLE_NEWS_FILTER: bool = os.getenv("ENABLE_NEWS_FILTER", "true").lower() == "true"
+    NEWS_SPIKE_ATR_THRESHOLD: float = float(os.getenv("NEWS_SPIKE_ATR_THRESHOLD", "3.0")) # 3x ATR spike triggers news filter
+    NEWS_SPIKE_VOLUME_THRESHOLD: float = float(os.getenv("NEWS_SPIKE_VOLUME_THRESHOLD", "4.0")) # 4x RVOL triggers news filter
+    NEWS_FILTER_LOOKBACK: int = int(os.getenv("NEWS_FILTER_LOOKBACK", "10")) # Bars to look back for recent spikes
     
     # Multi-Strategy Selection
     # Supported: TREND, RSI, BOLLINGER, MACD, BREAKOUT, BARUPDN, BOLLINGER_DIRECTED, CONSECUTIVE, 

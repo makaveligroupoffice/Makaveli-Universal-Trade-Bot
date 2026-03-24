@@ -415,11 +415,7 @@ class PerformanceAnalyzer:
             f"Kill switch: {kill_switch}",
             f"Loss streak pause: {'yes' if Config.ENABLE_LOSS_STREAK_PAUSE else 'no'}",
             f"Drawdown size reduction: {'yes' if Config.ENABLE_DRAWDOWN_SIZE_REDUCTION else 'no'}",
-            f"Profit withdrawal alert: {'yes' if Config.ENABLE_WITHDRAWAL_ALERTS else 'no'}",
-            "",
-            "Sincerely,",
-            "David Washington",
-            "USMC Vet"
+            f"Profit withdrawal alert: {'yes' if Config.ENABLE_WITHDRAWAL_ALERTS else 'no'}"
         ]
         return "\n".join(report)
 

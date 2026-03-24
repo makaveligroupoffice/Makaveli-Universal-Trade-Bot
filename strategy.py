@@ -255,6 +255,16 @@ class Strategy:
         df['fake_breakout_bull'] = (df['high'] > df['resistance'].shift(1)) & (df['close'] < df['resistance'].shift(1))
         df['fake_breakout_bear'] = (df['low'] < df['support'].shift(1)) & (df['close'] > df['support'].shift(1))
         
+        # --- News Spike Detector ---
+        # Detect sudden volatility or volume spikes that suggest a news event
+        df['atr_avg'] = df['atr14'].rolling(window=20).mean()
+        df['news_spike_volatility'] = (df['tr'] > (df['atr_avg'] * Config.NEWS_SPIKE_ATR_THRESHOLD))
+        df['news_spike_volume'] = (df['rvol'] > Config.NEWS_SPIKE_VOLUME_THRESHOLD)
+        df['news_spike'] = df['news_spike_volatility'] | df['news_spike_volume']
+        
+        # Mark as unsafe if there was a spike in the last X bars
+        df['recent_news_spike'] = df['news_spike'].rolling(window=Config.NEWS_FILTER_LOOKBACK).max() > 0
+
         return df
 
     @staticmethod
@@ -287,6 +297,10 @@ class Strategy:
         
         if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
             return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
+
+        # --- News Filter Check ---
+        if not Strategy.is_news_safe(symbol, None, bars=bars):
+            return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
 
         # Base filters
         volatility_excessive = last['atr14'] > (last['close'] * 0.03) 
@@ -521,13 +535,26 @@ class Strategy:
         return False, "insufficient confluence or signal strength", 0.0, last_indicators
 
     @staticmethod
-    def is_news_safe(symbol: str, market_data_client, news_list: list | None = None) -> bool:
+    def is_news_safe(symbol: str, market_data_client, news_list: list | None = None, bars=None) -> bool:
         """
         Avoid trading if there's high-impact news or too many recent news items (excessive volatility).
+        Also checks for recent technical news spikes (ATR/Volume spikes).
         """
-        news = news_list if news_list is not None else market_data_client.get_news(symbol, days=1)
+        if Config.ENABLE_NEWS_FILTER is False:
+            return True
+
+        # 1. Technical Spike Check (ATR/Volume)
+        if bars is not None:
+            df = Strategy._calculate_indicators(bars)
+            if df is not None and not df.empty:
+                last = df.iloc[-1]
+                if last.get('recent_news_spike', False):
+                    return False
+
+        # 2. Headline News Check
+        news = news_list if news_list is not None else (market_data_client.get_news(symbol, days=1) if market_data_client else [])
         # Check for specific negative keywords in headlines
-        negative_keywords = ["lawsuit", "investigation", "bankruptcy", "fraud", "hacked"]
+        negative_keywords = ["lawsuit", "investigation", "bankruptcy", "fraud", "hacked", "restatement", "default"]
         
         for item in news:
             if any(word in item.headline.lower() for word in negative_keywords):
@@ -567,6 +594,10 @@ class Strategy:
         
         if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
             return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
+
+        # --- News Filter Check ---
+        if not Strategy.is_news_safe(symbol, None, bars=bars):
+            return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
 
         # Base filters
         volatility_excessive = last['atr14'] > (last['close'] * 0.03)
@@ -856,6 +887,18 @@ class Strategy:
                 last_atr = df_full['atr14'].iloc[-1]
                 
         if Config.ENABLE_DYNAMIC_ATR_EXITS and last_atr > 0 and entry_price > 0:
+            # --- News Check during trade ---
+            # If news is unsafe, tighten stops significantly or exit
+            if df_full is not None and not Strategy.is_news_safe("", None, bars=bars):
+                # Tighten SL to half of current ATR for quick protection
+                tight_sl_price = last_atr * 0.5
+                if side == "buy":
+                    if current_price < (entry_price - tight_sl_price):
+                        return True, "Unsafe news: Tight ATR stop hit (buy)", 1.0
+                else: # short
+                    if current_price > (entry_price + tight_sl_price):
+                        return True, "Unsafe news: Tight ATR stop hit (short)", 1.0
+
             # Override SL/TP with ATR multiples if more conservative
             atr_sl_price = last_atr * Config.ATR_SL_MULTIPLIER
             atr_tp_price = last_atr * Config.ATR_TP_MULTIPLIER
