@@ -319,6 +319,18 @@ class RiskManager:
         # 3. Loss Limits (Daily & Weekly) - NON-NEGOTIABLE HARD SHUTDOWN
         base_equity = current_equity if current_equity else Config.STARTING_EQUITY
         
+        # Kill Switch: 3 Losses in a Row
+        max_consecutive = getattr(Config, "KILL_SWITCH_CONSECUTIVE_LOSSES", 3)
+        if int(self.state.get("consecutive_losses", 0)) >= max_consecutive:
+            alert_id = f"kill_switch_consecutive_losses_{self._today_str()}"
+            if not self.seen_alert(alert_id):
+                from bot_runner import log, send_notification
+                msg = f"KILL SWITCH TRIGGERED: {max_consecutive} consecutive losses hit. Bot stopping for safety."
+                log(msg, level="ERROR")
+                send_notification(msg)
+                self.mark_alert_seen(alert_id)
+            return False
+
         # Daily Loss
         max_daily_loss = Config.MAX_DAILY_LOSS_DOLLARS
         if Config.USE_PERCENTAGE_RISK:

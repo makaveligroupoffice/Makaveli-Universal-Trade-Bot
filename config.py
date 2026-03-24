@@ -104,7 +104,7 @@ class Config:
     # Liquidity & Order Flow
     LIQUIDITY_POOL_LOOKBACK: int = int(os.getenv("LIQUIDITY_POOL_LOOKBACK", "50"))
     VOLUME_DELTA_EMA_PERIOD: int = int(os.getenv("VOLUME_DELTA_EMA_PERIOD", "14"))
-    ATR_SL_MULTIPLIER: float = float(os.getenv("ATR_SL_MULTIPLIER", "2.0"))
+    ATR_SL_MULTIPLIER: float = float(os.getenv("ATR_SL_MULTIPLIER", "1.0"))
     ATR_TP_MULTIPLIER: float = float(os.getenv("ATR_TP_MULTIPLIER", "3.0"))
     BREAK_EVEN_PROFIT_PCT: float = float(os.getenv("BREAK_EVEN_PROFIT_PCT", "0.75")) # Move SL to entry at 0.75% profit
     ENABLE_DYNAMIC_ATR_EXITS: bool = os.getenv("ENABLE_DYNAMIC_ATR_EXITS", "true").lower() == "true"
@@ -134,6 +134,8 @@ class Config:
     FLASH_CRASH_PROTECTION_PCT: float = float(os.getenv("FLASH_CRASH_PROTECTION_PCT", "5.0")) # 5% drop in 1 min triggers shutdown
     VOLATILITY_SPIKE_KILL_SWITCH: bool = os.getenv("VOLATILITY_SPIKE_KILL_SWITCH", "true").lower() == "true"
     NEWS_SHOCK_PAUSE_MINUTES: int = int(os.getenv("NEWS_SHOCK_PAUSE_MINUTES", "30"))
+    ECONOMIC_CALENDAR_FILTER: bool = os.getenv("ECONOMIC_CALENDAR_FILTER", "true").lower() == "true" # CPI, FOMC
+    KILL_SWITCH_CONSECUTIVE_LOSSES: int = int(os.getenv("KILL_SWITCH_CONSECUTIVE_LOSSES", "3"))
 
     # AI Layer
     AI_JOURNALING_ENABLED: bool = os.getenv("AI_JOURNALING_ENABLED", "true").lower() == "true"

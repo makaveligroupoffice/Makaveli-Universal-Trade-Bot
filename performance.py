@@ -397,8 +397,8 @@ class PerformanceAnalyzer:
             "",
             "Exits",
             "",
-            f"Stop loss method: {Config.STOP_LOSS_METHOD}",
-            f"Take profit method: {Config.TAKE_PROFIT_METHOD}",
+            f"Stop loss method: {Config.STOP_LOSS_METHOD} (1 ATR)",
+            f"Take profit method: {Config.TAKE_PROFIT_METHOD} (3 ATR)",
             f"Break-even: {'yes' if Config.ENABLE_BREAK_EVEN_STOP else 'no'}",
             f"Trailing stop: {'yes' if Config.ENABLE_TRAILING_STOP else 'no'}",
             "",
@@ -412,8 +412,8 @@ class PerformanceAnalyzer:
             "",
             "Protection",
             "",
-            f"Kill switch: {kill_switch}",
-            f"Loss streak pause: {'yes' if Config.ENABLE_LOSS_STREAK_PAUSE else 'no'}",
+            f"Kill switch (3L): {'yes' if Config.ENABLE_LOSS_STREAK_PAUSE else 'no'}",
+            f"Economic Filter: {'yes' if getattr(Config, 'ECONOMIC_CALENDAR_FILTER', False) else 'no'}",
             f"Drawdown size reduction: {'yes' if Config.ENABLE_DRAWDOWN_SIZE_REDUCTION else 'no'}",
             f"Profit withdrawal alert: {'yes' if Config.ENABLE_WITHDRAWAL_ALERTS else 'no'}"
         ]
