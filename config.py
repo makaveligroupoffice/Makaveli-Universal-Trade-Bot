@@ -180,6 +180,16 @@ class Config:
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
     ENABLE_AI_EVOLUTION: bool = os.getenv("ENABLE_AI_EVOLUTION", "true").lower() == "true"
     ENABLE_AI_TRADE_FILTER: bool = os.getenv("ENABLE_AI_TRADE_FILTER", "false").lower() == "true"
+    ENABLE_REGIME_FILTER: bool = os.getenv("ENABLE_REGIME_FILTER", "true").lower() == "true"
+    ENABLE_WITHDRAWAL_ALERTS: bool = os.getenv("ENABLE_WITHDRAWAL_ALERTS", "true").lower() == "true"
+    ENABLE_LOSS_STREAK_PAUSE: bool = os.getenv("ENABLE_LOSS_STREAK_PAUSE", "true").lower() == "true"
+    ENABLE_DRAWDOWN_SIZE_REDUCTION: bool = os.getenv("ENABLE_DRAWDOWN_SIZE_REDUCTION", "true").lower() == "true"
+    
+    STOP_LOSS_METHOD: str = os.getenv("STOP_LOSS_METHOD", "ATR")
+    TAKE_PROFIT_METHOD: str = os.getenv("TAKE_PROFIT_METHOD", "ATR")
+    ENABLE_BREAK_EVEN_STOP: bool = os.getenv("ENABLE_BREAK_EVEN_STOP", "true").lower() == "true"
+    ENABLE_TRAILING_STOP: bool = os.getenv("ENABLE_TRAILING_STOP", "true").lower() == "true"
+    ENABLE_REGIME_FILTER_FOR_FAST_AUDIT: bool = True # Flag to ensure availability
 
     # Distributed Auto-Updates
     ENABLE_AUTO_UPDATE: bool = os.getenv("ENABLE_AUTO_UPDATE", "true").lower() == "true"

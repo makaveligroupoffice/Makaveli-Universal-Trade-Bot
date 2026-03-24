@@ -34,6 +34,7 @@ class PerformanceAnalyzer:
                         
                         # Strategy breakdown
                         reason = entry.get("reason", "Unknown")
+                        if not reason: reason = "Unknown"
                         strat = "Unknown"
                         for s in Config.ACTIVE_STRATEGIES:
                             if s in reason.upper():
@@ -350,6 +351,75 @@ class PerformanceAnalyzer:
             "",
             "Insight:",
             "- Low score trades are underperforming" if analysis.get('pnl_below_75', 0) < 0 else "- Strategy is performing consistently across scores."
+        ]
+        return "\n".join(report)
+
+    def generate_fast_audit_report(self, days: int = 7) -> str:
+        analysis = self.analyze_recent_trades(days=days)
+        
+        # Performance metrics
+        win_rate = "N/A"
+        avg_win = "N/A"
+        avg_loss = "N/A"
+        profit_factor = "N/A"
+        max_drawdown = "N/A"
+
+        if analysis:
+            win_rate = f"{analysis['win_rate']*100:.1f}%"
+            avg_win = f"${analysis['avg_win']:.2f}"
+            avg_loss = f"${analysis['avg_loss']:.2f}"
+            profit_factor = f"{analysis['profit_factor']:.2f}"
+            max_drawdown = f"{analysis['max_drawdown_pct']:.2f}%"
+
+        # Protection status (from bot_state if available, or just from Config)
+        kill_switch = "no"
+        from bot_state import BotStateStore
+        store = BotStateStore(os.path.join(Config.LOG_DIR, "bot_state.json"))
+        state = store.load()
+        if state.get("kill_switch_active"): kill_switch = "YES"
+
+        report = [
+            "Fast audit result",
+            "",
+            "Risk",
+            "",
+            f"Risk per trade: {Config.RISK_PCT_PER_TRADE}%",
+            f"Max daily loss: {Config.MAX_DAILY_LOSS_PCT}%",
+            f"Max weekly loss: {Config.MAX_WEEKLY_LOSS_PCT}%",
+            f"Max open positions: {Config.MAX_OPEN_POSITIONS}",
+            "",
+            "Entries",
+            "",
+            f"Strategies used: {', '.join(Config.ACTIVE_STRATEGIES)}",
+            f"Trade score threshold: {Config.MIN_TRADE_QUALITY_SCORE}",
+            f"Regime filter: {'yes' if Config.ENABLE_REGIME_FILTER else 'no'}",
+            f"News filter: {'yes' if Config.ENABLE_NEWS_FILTER else 'no'}",
+            "",
+            "Exits",
+            "",
+            f"Stop loss method: {Config.STOP_LOSS_METHOD}",
+            f"Take profit method: {Config.TAKE_PROFIT_METHOD}",
+            f"Break-even: {'yes' if Config.ENABLE_BREAK_EVEN_STOP else 'no'}",
+            f"Trailing stop: {'yes' if Config.ENABLE_TRAILING_STOP else 'no'}",
+            "",
+            "Performance",
+            "",
+            f"Win rate: {win_rate}",
+            f"Avg win: {avg_win}",
+            f"Avg loss: {avg_loss}",
+            f"Profit factor: {profit_factor}",
+            f"Max drawdown: {max_drawdown}",
+            "",
+            "Protection",
+            "",
+            f"Kill switch: {kill_switch}",
+            f"Loss streak pause: {'yes' if Config.ENABLE_LOSS_STREAK_PAUSE else 'no'}",
+            f"Drawdown size reduction: {'yes' if Config.ENABLE_DRAWDOWN_SIZE_REDUCTION else 'no'}",
+            f"Profit withdrawal alert: {'yes' if Config.ENABLE_WITHDRAWAL_ALERTS else 'no'}",
+            "",
+            "Sincerely,",
+            "David Washington",
+            "USMC Vet"
         ]
         return "\n".join(report)
 

@@ -24,6 +24,7 @@ def run_eod_report():
         # Check if it's the end of the week (Friday)
         if datetime.now().weekday() == 4:
             trader._send_weekly_report()
+            trader._send_fast_audit_report()
             
         print(f"[{datetime.now().strftime('%H:%M:%S')}] EOD Comprehensive Reports sent.")
 

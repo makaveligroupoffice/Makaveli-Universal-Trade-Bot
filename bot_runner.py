@@ -244,6 +244,14 @@ class AutoTrader:
         log.info("Sending trade quality analysis...")
         send_notification(report, title="🧠 TRADE QUALITY ANALYSIS")
 
+    def _send_fast_audit_report(self, days: int = 7):
+        """Generates and sends the Fast Audit Result report."""
+        from performance import PerformanceAnalyzer
+        analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
+        report = analyzer.generate_fast_audit_report(days=days)
+        log.info(f"Sending Fast Audit Report for last {days} days...")
+        send_notification(report, title="⚡ Fast audit result")
+
     def _send_bot_health_report(self):
         """Generates and sends a bot health status report."""
         # 1. API Status
