@@ -222,11 +222,43 @@ class Strategy:
         df['resistance'] = df['high'].rolling(window=20).max()
         df['near_support'] = df['close'] < (df['support'] * 1.01)
         df['near_resistance'] = df['close'] > (df['resistance'] * 0.99)
+
+        # --- Market Regime Intelligence ---
+        # Trend vs Chop detector (ADX, volatility compression)
+        df['is_chop'] = df['adx'] < Config.CHOP_ADX_THRESHOLD
+        df['vol_compression'] = df['bb_std'].rolling(20).min() / df['bb_std'].rolling(20).max() < 0.5
+
+        # Liquidity condition detection (thin vs heavy markets)
+        df['avg_volume50'] = df['volume'].rolling(50).mean()
+        df['is_thin_market'] = df['volume'] < (df['avg_volume50'] * 0.5)
+        
+        # --- Liquidity & Order Flow Simulation ---
+        # Volume Delta Approximation (Buying vs Selling Pressure)
+        # We approximate delta by looking at where the close is relative to the candle range
+        df['candle_range'] = df['high'] - df['low']
+        df['close_pos'] = (df['close'] - df['low']) / df['candle_range'].replace(0, 1e-9)
+        df['vol_delta'] = df['volume'] * (2 * df['close_pos'] - 1)
+        df['vol_delta_ema'] = df['vol_delta'].ewm(span=Config.VOLUME_DELTA_EMA_PERIOD).mean()
+        df['momentum_imbalance'] = df['vol_delta_ema'] / df['avg_volume20']
+        
+        # Liquidity Pool Mapping (Equal Highs/Lows)
+        lookback = Config.LIQUIDITY_POOL_LOOKBACK
+        df['eqh'] = (df['high'].rolling(lookback).max() == df['high']).rolling(5).sum() > 0
+        df['eql'] = (df['low'].rolling(lookback).min() == df['low']).rolling(5).sum() > 0
+        
+        # --- Smart Money Concepts (SMC) ---
+        # Order Imbalance detection
+        df['imbalance_bull'] = (df['low'] > df['high'].shift(2)) & (df['close'] > df['open'])
+        df['imbalance_bear'] = (df['high'] < df['low'].shift(2)) & (df['close'] < df['open'])
+
+        # Fake Breakout filter
+        df['fake_breakout_bull'] = (df['high'] > df['resistance'].shift(1)) & (df['close'] < df['resistance'].shift(1))
+        df['fake_breakout_bear'] = (df['low'] < df['support'].shift(1)) & (df['close'] > df['support'].shift(1))
         
         return df
 
     @staticmethod
-    def should_buy(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float, dict]:
+    def should_buy(bars, dynamic_config: dict | None = None, active_strategies: list | None = None, symbol: str = "") -> tuple[bool, str, float, dict]:
         """
         Returns (should_buy, reason, signal_strength, indicators)
         Uses confluence of multiple strategy families to ensure high-probability entries.
@@ -241,10 +273,21 @@ class Strategy:
         last_indicators = last.to_dict()
         prev = df.iloc[-2]
         
-        active = Config.ACTIVE_STRATEGIES
+        active = active_strategies if active_strategies else Config.ACTIVE_STRATEGIES
         matches = []
         strength_score = 0.0
         
+        # --- EDGE STACKING ENGINE (Score-based) ---
+        from intelligence import ConfidenceEngine
+        # We need a risk manager instance for confidence scores
+        from risk import RiskManager
+        rm = RiskManager()
+        scores = ConfidenceEngine.calculate_scores(bars, "CONFLUENCE", rm)
+        trade_score = scores.get("trade", 0)
+        
+        if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
+            return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
+
         # Base filters
         volatility_excessive = last['atr14'] > (last['close'] * 0.03) 
         last_candle_green = last['close'] > prev['close']
@@ -262,6 +305,22 @@ class Strategy:
         min_rvol_base = 3.0 if is_after_hours else 1.8
         volume_spike = last['rvol'] > (dynamic_config.get("min_rvol", min_rvol_base) if dynamic_config else min_rvol_base)
 
+        # 0. FAMILY: LIQUIDITY & SMC
+        smc_match = False
+        if "LIQUIDITY" in active:
+            if last['sweep_low'] and last_candle_green:
+                matches.append("LIQUIDITY_SWEEP_LOW")
+                strength_score += 0.5
+                smc_match = True
+            if last['fvg_bull'] and last['close'] > last['high'].shift(2):
+                matches.append("FVG_RECOVERY")
+                strength_score += 0.4
+                smc_match = True
+            if last['imbalance_bull']:
+                matches.append("ORDER_IMBALANCE_BULL")
+                strength_score += 0.3
+                smc_match = True
+
         # 1. FAMILY: TREND
         trend_match = False
         long_term_bullish = last['close'] > last['sma200']
@@ -277,6 +336,15 @@ class Strategy:
             if long_term_bullish and hourly_trend_bullish and sniper_stack and last_candle_green and close_relative_pos >= min_close_relative and vwap_filter:
                 matches.append("TREND_SNIPER")
                 strength_score += 0.5
+                trend_match = True
+
+        # --- RE-ENTRY INTELLIGENCE (Pullback entry) ---
+        if Config.ENABLE_REENTRY_LOGIC and not trend_match and "TREND" in active:
+            # If we missed the breakout, check for a pullback to SMA10 or SMA20
+            near_ema = (abs(last['close'] - last['sma10']) / last['close'] < (Config.REENTRY_PULLBACK_PCT / 100.0))
+            if long_term_bullish and sniper_stack and near_ema and last_candle_green:
+                matches.append("TREND_REENTRY_PULLBACK")
+                strength_score += 0.4
                 trend_match = True
 
         if "SUPERTREND" in active:
@@ -385,10 +453,63 @@ class Strategy:
 
         # Increase requirement to 3 families or 2 families + high strength
         # AND require ADX for TREND_SNIPER
-        if (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe):
-            if "TREND_SNIPER" in matches and not is_trending:
+        meets_base_confluence = (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe)
+        
+        if not meets_base_confluence:
+            # Fallback to Sniper or Aggressive
+            if "TREND_SNIPER" in matches and last['rvol'] > 3.5 and is_trending:
+                 pass # Allow to continue to Quality Score
+            elif "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_green and rsi_safe:
+                 pass # Allow to continue
+            else:
+                 return False, "insufficient confluence or signal strength", 0.0, last_indicators
+
+        if "TREND_SNIPER" in matches and not is_trending:
                 return False, f"TREND_SNIPER rejected: weak trend (ADX: {last['adx']:.1f})", 0.0, last_indicators
-            return True, f"CONFLUENCE ({'+'.join(matches)})", final_strength, last_indicators
+
+        # --- Trade Quality Filter (0-100 Scoring) ---
+        # Scoring based on: Trend alignment, Volume confirmation, Volatility, Risk/Reward
+        quality_score = 0.0
+        # 1. Trend Alignment (30 pts)
+        if last['close'] > last['sma200']: quality_score += 15
+        if last['close'] > last['sma_hourly']: quality_score += 15
+        
+        # 2. Volume Confirmation (30 pts)
+        if last['rvol'] > 2.0: quality_score += 15
+        if last['rvol'] > 3.5: quality_score += 15
+        
+        # 3. Volatility / Market Regime (20 pts)
+        if not last['is_chop']: quality_score += 10
+        if not last['is_thin_market']: quality_score += 10
+        
+        # 4. Confluence Strength (20 pts)
+        quality_score += (num_families / 5.0) * 20.0
+        
+        # SMC / Trap Detection Bonus/Penalty
+        if last['sweep_low']: quality_score += 10 # Liquidity sweep is good for entry
+        if last['fake_breakout_bull']: quality_score -= 20 # Avoid bull traps
+        
+        # --- MARKET DNA & CONFIDENCE ENGINE ---
+        from intelligence import MarketDNA, ConfidenceEngine
+        dna_profile = MarketDNA.get_asset_profile(symbol)
+        if dna_profile == "MACRO_TREND" and is_trending:
+             quality_score += 10
+        elif dna_profile == "VOLATILITY_SPIKE" and last['rvol'] > 4.0:
+             quality_score += 15
+             
+        scores = ConfidenceEngine.calculate_scores(bars, matches[0] if matches else "unknown", None)
+        trade_confidence = scores.get("trade", 0)
+        
+        # Combine quality and confidence
+        final_score = (quality_score + trade_confidence) / 2
+        last_indicators['trade_quality_score'] = round(final_score, 2)
+        last_indicators['market_confidence'] = scores.get("market", 0)
+        last_indicators['strategy_confidence'] = scores.get("strategy", 0)
+
+        if final_score < Config.MIN_TRADE_QUALITY_SCORE or trade_confidence < Config.CONFIDENCE_THRESHOLD:
+            return False, f"quality/confidence too low ({final_score:.1f} score, {trade_confidence:.1f} conf)", 0.0, last_indicators
+
+        return True, f"CONFLUENCE ({'+'.join(matches)})", final_strength, last_indicators
         
         # Stricter Sniper: Requires trend match + higher RVOL + ADX trend
         if "TREND_SNIPER" in matches and last['rvol'] > 3.5 and is_trending:
@@ -419,7 +540,7 @@ class Strategy:
         return True
 
     @staticmethod
-    def should_short(bars, dynamic_config: dict | None = None) -> tuple[bool, str, float, dict]:
+    def should_short(bars, dynamic_config: dict | None = None, active_strategies: list | None = None, symbol: str = "") -> tuple[bool, str, float, dict]:
         """
         Returns (should_short, reason, signal_strength, indicators)
         Uses confluence for high-probability short entries.
@@ -433,10 +554,20 @@ class Strategy:
         last_indicators = last.to_dict()
         prev = df.iloc[-2]
         
-        active = Config.ACTIVE_STRATEGIES
+        active = active_strategies if active_strategies else Config.ACTIVE_STRATEGIES
         matches = []
         strength_score = 0.0
         
+        # --- EDGE STACKING ENGINE (Score-based) ---
+        from intelligence import ConfidenceEngine
+        from risk import RiskManager
+        rm = RiskManager()
+        scores = ConfidenceEngine.calculate_scores(bars, "CONFLUENCE_SHORT", rm)
+        trade_score = scores.get("trade", 0)
+        
+        if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
+            return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
+
         # Base filters
         volatility_excessive = last['atr14'] > (last['close'] * 0.03)
         last_candle_red = last['close'] < prev['close']
@@ -454,6 +585,22 @@ class Strategy:
         min_rvol_base = 3.0 if is_after_hours else 1.8
         volume_spike = last['rvol'] > (dynamic_config.get("min_rvol", min_rvol_base) if dynamic_config else min_rvol_base)
 
+        # 0. FAMILY: LIQUIDITY & SMC
+        smc_match = False
+        if "LIQUIDITY" in active:
+            if last['sweep_high'] and last_candle_red:
+                matches.append("LIQUIDITY_SWEEP_HIGH")
+                strength_score += 0.5
+                smc_match = True
+            if last['fvg_bear'] and last['close'] < last['low'].shift(2):
+                matches.append("FVG_BEAR_RECOVERY")
+                strength_score += 0.4
+                smc_match = True
+            if last['imbalance_bear']:
+                matches.append("ORDER_IMBALANCE_BEAR")
+                strength_score += 0.3
+                smc_match = True
+
         # 1. FAMILY: TREND
         trend_match = False
         long_term_bearish = last['close'] < last['sma200']
@@ -469,6 +616,14 @@ class Strategy:
             if long_term_bearish and hourly_trend_bearish and sniper_bearish_stack and last_candle_red and close_relative_pos >= min_close_relative and vwap_filter_short:
                 matches.append("SNIPER_SHORT")
                 strength_score += 0.5
+                trend_match = True
+
+        # --- SHORT RE-ENTRY INTELLIGENCE ---
+        if Config.ENABLE_REENTRY_LOGIC and not trend_match and "TREND" in active:
+            near_ema = (abs(last['close'] - last['sma10']) / last['close'] < (Config.REENTRY_PULLBACK_PCT / 100.0))
+            if long_term_bearish and sniper_bearish_stack and near_ema and last_candle_red:
+                matches.append("TREND_SHORT_REENTRY_PULLBACK")
+                strength_score += 0.4
                 trend_match = True
 
         if "SUPERTREND" in active:
@@ -568,10 +723,59 @@ class Strategy:
         rsi_safe = last['rsi14'] > 30
 
         # Increase requirement to 3 families or 2 families + high strength
-        if (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe):
-            if "SNIPER_SHORT" in matches and not is_trending:
+        meets_base_confluence = (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe)
+        
+        if not meets_base_confluence:
+            # Fallback to Sniper or Aggressive
+            if "SNIPER_SHORT" in matches and last['rvol'] > 3.5 and is_trending:
+                 pass 
+            elif "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_red and rsi_safe:
+                 pass
+            else:
+                 return False, "insufficient confluence or signal strength", 0.0, last_indicators
+
+        if "SNIPER_SHORT" in matches and not is_trending:
                 return False, f"SNIPER_SHORT rejected: weak trend (ADX: {last['adx']:.1f})", 0.0, last_indicators
-            return True, f"CONFLUENCE SHORT ({'+'.join(matches)})", final_strength, last_indicators
+
+        # --- Trade Quality Filter (Short) ---
+        quality_score = 0.0
+        # 1. Trend Alignment
+        if last['close'] < last['sma200']: quality_score += 15
+        if last['close'] < last['sma_hourly']: quality_score += 15
+        # 2. Volume
+        if last['rvol'] > 2.0: quality_score += 15
+        if last['rvol'] > 3.5: quality_score += 15
+        # 3. Market Regime
+        if not last['is_chop']: quality_score += 10
+        if not last['is_thin_market']: quality_score += 10
+        # 4. Confluence
+        quality_score += (num_families / 5.0) * 20.0
+        
+        # SMC / Trap Detection
+        if last['sweep_high']: quality_score += 10
+        if last['fake_breakout_bear']: quality_score -= 20 # Avoid bear traps
+        
+        # --- MARKET DNA & CONFIDENCE ENGINE ---
+        from intelligence import MarketDNA, ConfidenceEngine
+        dna_profile = MarketDNA.get_asset_profile(symbol)
+        if dna_profile == "MACRO_TREND" and is_trending:
+             quality_score += 10
+        elif dna_profile == "VOLATILITY_SPIKE" and last['rvol'] > 4.0:
+             quality_score += 15
+             
+        scores = ConfidenceEngine.calculate_scores(bars, matches[0] if matches else "unknown", None)
+        trade_confidence = scores.get("trade", 0)
+        
+        # Combine quality and confidence
+        final_score = (quality_score + trade_confidence) / 2
+        last_indicators['trade_quality_score'] = round(final_score, 2)
+        last_indicators['market_confidence'] = scores.get("market", 0)
+        last_indicators['strategy_confidence'] = scores.get("strategy", 0)
+
+        if final_score < Config.MIN_TRADE_QUALITY_SCORE or trade_confidence < Config.CONFIDENCE_THRESHOLD:
+            return False, f"quality/confidence too low ({final_score:.1f} score, {trade_confidence:.1f} conf)", 0.0, last_indicators
+
+        return True, f"CONFLUENCE SHORT ({'+'.join(matches)})", final_strength, last_indicators
         
         # Stricter Sniper Short: Requires trend match + higher RVOL + ADX trend
         if "SNIPER_SHORT" in matches and last['rvol'] > 3.5 and is_trending:
@@ -583,21 +787,42 @@ class Strategy:
         return False, "insufficient confluence or signal strength", 0.0, last_indicators
 
     @staticmethod
-    def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None, is_manual: bool = False, entry_time: datetime | None = None) -> tuple[bool, str]:
+    def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None, is_manual: bool = False, entry_time: datetime | None = None) -> tuple[bool, str, float]:
+        """
+        Returns (should_exit, reason, exit_fraction)
+        exit_fraction: 1.0 = exit full, 0.5 = exit half, etc.
+        """
         if current_price <= 0:
-            return False, "invalid current price"
+            return False, "invalid current price", 1.0
 
         # --- Time-Based Exit ---
         if entry_time and Config.TIME_BASED_EXIT_MINUTES > 0:
             elapsed = (datetime.now() - entry_time).total_seconds() / 60.0
             if elapsed >= Config.TIME_BASED_EXIT_MINUTES:
-                return True, f"time-based exit hit ({Config.TIME_BASED_EXIT_MINUTES} mins elapsed)"
+                return True, f"time-based exit hit ({Config.TIME_BASED_EXIT_MINUTES} mins elapsed)", 1.0
 
         # Use dynamic config if provided, else fallback to global config
         sl_pct = (dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if dynamic_config else Config.STOP_LOSS_PCT) / 100.0
         tp_pct = (dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
         ts_pct = Config.TRAILING_STOP_PCT / 100.0 
         ts_activation_pct = Config.TRAILING_STOP_ACTIVATION_PCT / 100.0
+
+        # --- Exit Ladder (Partial Take Profits) ---
+        if Config.EXIT_LADDER_ENABLED and entry_price > 0:
+            profit_pct = (current_price / entry_price - 1) if side == "buy" else (entry_price / current_price - 1)
+            # TP 1: at 0.5 * target TP -> exit 25%
+            # TP 2: at 0.75 * target TP -> exit 50%
+            # TP 3: at 1.0 * target TP -> exit 100% (or let run with trailing)
+            if profit_pct >= tp_pct * 1.5:
+                 return True, "TP 4 (EXTREME): full exit", 1.0
+            elif profit_pct >= tp_pct:
+                 return True, "TP 3 (FULL): target reached", 1.0
+            elif profit_pct >= tp_pct * 0.75:
+                 # Signal to exit 50% (handled by bot_runner)
+                 return True, "TP 2 (PARTIAL 50%): scaling out", 0.5
+            elif profit_pct >= tp_pct * 0.5:
+                 # Signal to exit 25%
+                 return True, "TP 1 (PARTIAL 25%): scaling out", 0.25
 
         # --- Profit Lock System ---
         profit_lock_pct = Config.PROFIT_LOCK_PCT / 100.0
@@ -624,6 +849,7 @@ class Strategy:
 
         # --- Dynamic ATR-Based Exits ---
         last_atr = 0.0
+        df_full = None
         if len(bars) >= 20:
             df_full = Strategy._calculate_indicators(bars)
             if df_full is not None:
@@ -634,12 +860,17 @@ class Strategy:
             atr_sl_price = last_atr * Config.ATR_SL_MULTIPLIER
             atr_tp_price = last_atr * Config.ATR_TP_MULTIPLIER
             
+            # ADAPTIVE TP: If momentum is high, extend TP
+            if Config.ADAPTIVE_TP_ENABLED and df_full is not None:
+                if df_full['adx'].iloc[-1] > 35:
+                    atr_tp_price *= 1.5 # Let winners run in strong trends
+
             atr_sl_pct = atr_sl_price / entry_price
             atr_tp_pct = atr_tp_price / entry_price
             
             # Use the tighter of the two (fixed pct vs ATR)
             sl_pct = min(sl_pct, atr_sl_pct)
-            tp_pct = max(tp_pct, atr_tp_pct) # For TP we might want to go LARGER with ATR if it's trending
+            tp_pct = max(tp_pct, atr_tp_pct) 
 
         # --- Break-Even Stop Logic ---
         be_profit_pct = Config.BREAK_EVEN_PROFIT_PCT / 100.0
@@ -684,6 +915,12 @@ class Strategy:
             # Trailing stop - Only once in enough profit
             if ts_pct > 0 and high_since_entry and entry_price > 0:
                 is_activated = (current_price >= entry_price * (1 + ts_activation_pct)) or (high_since_entry >= entry_price * (1 + ts_activation_pct))
+                
+                # Dynamic Trailing Logic: Tighten if in high profit or momentum fades
+                if is_activated and Config.ADAPTIVE_TP_ENABLED:
+                    if (current_price / entry_price) - 1 > (tp_pct * 0.8):
+                        ts_pct *= 0.5 # Tighten trailing stop when close to TP
+                
                 if is_activated and current_price <= high_since_entry * (1 - ts_pct):
                     return True, f"trailing stop hit (high: {high_since_entry:.2f})"
             # Take profit - Only if not manual or if entry_price is set
@@ -700,6 +937,12 @@ class Strategy:
             low_since_entry = high_since_entry
             if ts_pct > 0 and low_since_entry and entry_price > 0:
                 is_activated = (current_price <= entry_price * (1 - ts_activation_pct)) or (low_since_entry <= entry_price * (1 - ts_activation_pct))
+                
+                # Dynamic Trailing Logic (Short)
+                if is_activated and Config.ADAPTIVE_TP_ENABLED:
+                    if (entry_price / current_price) - 1 > (tp_pct * 0.8):
+                        ts_pct *= 0.5
+                
                 if is_activated and current_price >= low_since_entry * (1 + ts_pct):
                     return True, f"short trailing stop hit (low: {low_since_entry:.2f})"
             # Take profit (price went DOWN)

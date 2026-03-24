@@ -12,6 +12,7 @@ from flask import Flask
 
 from bot_state import BotStateStore
 from broker_alpaca import AlpacaBroker
+from broker_base import BrokerBase
 from config import Config
 from market_data import MarketDataClient
 from risk import RiskManager
@@ -50,11 +51,18 @@ db.init_app(app)
 
 
 class AutoTrader:
-    def __init__(self, user: User | None = None):
+    def __init__(self, user: User | None = None, broker: BrokerBase | None = None, timeframe: str = "1Min", strategy_active: list | None = None, risk_pct: float | None = None):
         self.user = user
+        self.timeframe = timeframe
+        self.strategy_active = strategy_active or ["SNIPER", "CONFLUENCE"]
+        self.risk_pct_override = risk_pct
+        self.last_run = time.time()
         self._validate_launch_mode()
 
-        if user and user.alpaca_key and user.alpaca_secret:
+        if broker:
+            self.broker = broker
+            user_id = "external"
+        elif user and user.alpaca_key and user.alpaca_secret:
             self.broker = AlpacaBroker(
                 key=user.alpaca_key,
                 secret=user.alpaca_secret,
@@ -259,7 +267,12 @@ class AutoTrader:
                 log.info(f"Detected manual trade: {side} {qty} {symbol} at {price}. Recording for learning.")
                 
                 # Capture context (indicators) at this moment
-                bars = self.data.get_recent_bars(symbol, minutes=30)
+                # Scaling timeframe for multi-bot
+                lookback_minutes = 30
+                if self.timeframe == "15Min": lookback_minutes = 150
+                elif self.timeframe == "5Min": lookback_minutes = 75
+            
+                bars = self.data.get_recent_bars(symbol, minutes=lookback_minutes)
                 indicators = {}
                 if len(bars) >= 20:
                     indicators = self.strategy._calculate_indicators(bars)
@@ -280,6 +293,15 @@ class AutoTrader:
                     # For now, we'll just record it and let LearningEngine handle it
                     pass
 
+                # Use the detection reason
+                det_reason = f"Manual Trade Detection (ID: {oid})"
+                # Extract tags from reason for trade memory
+                tags = []
+                if "BREAKOUT" in det_reason.upper(): tags.append("breakout")
+                if "SCALPING" in det_reason.upper(): tags.append("scalp")
+                if "SNIPER" in det_reason.upper(): tags.append("sniper")
+                if "REVERSAL" in det_reason.upper(): tags.append("reversal")
+
                 self.journal.record_trade(
                     symbol=symbol,
                     action=side,
@@ -287,9 +309,10 @@ class AutoTrader:
                     price=price,
                     side=side,
                     pnl=pnl,
-                    reason=f"Manual Trade Detection (ID: {oid})",
+                    reason=det_reason,
                     manual=True,
-                    context=context
+                    context=context,
+                    tags=tags
                 )
                 
                 # Attach context to the last recorded entry in journal (hacky but works if we update record_trade)
@@ -677,14 +700,24 @@ class AutoTrader:
             log.info("Skipping entries: market is closed")
             return
 
-        if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm):
+        # 0. META-RISK ENGINE (Total At Risk)
+        total_at_risk = 0.0
+        for pos in self.positions.values():
+            entry_price = float(pos.get("entry_price", 0))
+            current_price = self.data.get_latest_mid_price(pos["symbol"]) or entry_price
+            qty = float(pos.get("qty", 0))
+            # Risk is defined as the distance between current price and stop loss (or current loss)
+            # Simplified: Risk is current equity exposure * stop_loss_pct
+            total_at_risk += (qty * current_price) * (Config.STOP_LOSS_PCT / 100.0)
+
+        if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, total_at_risk=total_at_risk, timeframe=self.timeframe):
             log.info("Risk rules block new entries")
             return
 
         # 4. Global Equity Check
         account = self.broker.get_account()
         current_equity = float(getattr(account, "equity", Config.STARTING_EQUITY))
-        if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, current_equity=current_equity):
+        if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, current_equity=current_equity, total_at_risk=total_at_risk, timeframe=self.timeframe):
             log.warning(f"Risk rules (Equity/Drawdown) block new entries. Equity: ${current_equity:.2f}")
             return
 
@@ -736,8 +769,8 @@ class AutoTrader:
                 continue
 
             # 5. Sector/Diversity Check
-            if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, symbol=symbol, current_equity=current_equity):
-                log.info(f"Skipping {symbol}: Sector limit reached or Portfolio too concentrated.")
+            if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, symbol=symbol, current_equity=current_equity, bars=bars, total_at_risk=total_at_risk, timeframe=self.timeframe):
+                log.info(f"Skipping {symbol}: Sector/Crisis/Risk limit reached.")
                 continue
 
             allowed, live_reason = self._symbol_allowed_for_live(symbol)
@@ -749,7 +782,14 @@ class AutoTrader:
             if spread_pct is None or spread_pct > max_spread:
                 continue
 
-            bars = self.data.get_recent_bars(symbol, minutes=30)
+            # Scaling timeframe for multi-bot
+            lookback_minutes = 30
+            if self.timeframe == "15Min": lookback_minutes = 150
+            elif self.timeframe == "5Min": lookback_minutes = 75
+            
+            bars = self.data.get_recent_bars(symbol, minutes=lookback_minutes)
+            if not bars:
+                continue
             
             # News Awareness Filter
             if Config.ENABLE_NEWS_FILTER:
@@ -768,8 +808,17 @@ class AutoTrader:
                         log.info(f"Skipping {symbol}: AI detected bearish sentiment ({sentiment_score:.2f})")
                         continue
 
-            should_buy, buy_reason, buy_strength, buy_indicators = self.strategy.should_buy(bars, self.dynamic_config)
-            should_short, short_reason, short_strength, short_indicators = self.strategy.should_short(bars, self.dynamic_config)
+            # Edge Decay Detection
+            from intelligence import EdgeDecayDetector
+            detector = EdgeDecayDetector()
+            decay_report = detector.analyze_decay()
+            if decay_report.get("decayed"):
+                log.warning(f"Strategy Edge Decay detected (WR: {decay_report['win_rate']:.1f}%). Throttling entries.")
+                # Automatically decrease risk
+                signal_strength *= 0.5
+
+            should_buy, buy_reason, buy_strength, buy_indicators = self.strategy.should_buy(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol)
+            should_short, short_reason, short_strength, short_indicators = self.strategy.should_short(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol)
             
             action = None
             reason = None
@@ -833,6 +882,55 @@ class AutoTrader:
                 log.info(f"Skipping {symbol}: {action} signal strength {strength} is below effective threshold {effective_min_strength}")
                 continue
 
+            # --- SIGNAL DELAY FILTER (Reject late signals) ---
+            if Config.SIGNAL_DELAY_FILTER_SECONDS > 0:
+                # Assuming bars[-1].timestamp exists or using now() - bar_time
+                bar_time = bars[-1].timestamp
+                from datetime import timezone
+                if (datetime.now(timezone.utc) - bar_time).total_seconds() > Config.SIGNAL_DELAY_FILTER_SECONDS:
+                    log.info(f"Skipping {symbol}: Signal is too old ({Config.SIGNAL_DELAY_FILTER_SECONDS}s delay limit).")
+                    continue
+
+            # --- DECISION DELAY SYSTEM ---
+            if Config.DECISION_DELAY_MINS > 0:
+                delay_key = f"delay_{symbol}_{action}"
+                last_seen = self.state.get("decision_delays", {}).get(delay_key)
+                if not last_seen:
+                    log.info(f"Signal for {symbol} {action} detected. Delaying for {Config.DECISION_DELAY_MINS}m for confirmation.")
+                    delays = self.state.get("decision_delays", {})
+                    delays[delay_key] = datetime.now().isoformat()
+                    self.state["decision_delays"] = delays
+                    self._save_state()
+                    continue
+                else:
+                    last_seen_dt = datetime.fromisoformat(last_seen)
+                    elapsed = (datetime.now() - last_seen_dt).total_seconds() / 60.0
+                    if elapsed < Config.DECISION_DELAY_MINS:
+                        log.info(f"Waiting for decision delay on {symbol} {action} ({elapsed:.1f}/{Config.DECISION_DELAY_MINS}m)")
+                        continue
+                    else:
+                        # Clear delay after it passes
+                        delays = self.state.get("decision_delays", {})
+                        delays.pop(delay_key, None)
+                        self.state["decision_delays"] = delays
+                        self._save_state()
+                        log.info(f"Decision delay passed for {symbol} {action}. Proceeding.")
+
+            # --- MANUAL APPROVAL MODE ---
+            if Config.MANUAL_APPROVAL_MODE:
+                approval_id = f"approve_{symbol}_{action}_{datetime.now().strftime('%Y%m%d%H%M')}"
+                if not self.risk.seen_alert(approval_id):
+                    msg = f"🔔 MANUAL APPROVAL REQUIRED\nBot wants to {action.upper()} {symbol}\nReason: {reason}\nStrength: {strength:.2f}\nUse Web HUD to approve."
+                    log.info(msg)
+                    send_notification(msg, title="Manual Approval Required")
+                    self.risk.mark_alert_seen(approval_id)
+                    continue
+                else:
+                    # In a real app, we'd check a "confirmed_approvals" list in state
+                    # For now, if we already notified, we skip until manually cleared or implemented.
+                    log.info(f"Waiting for manual approval for {symbol} {action}...")
+                    continue
+
             # 3. AI Signal Verification (Final Check)
             if Config.ENABLE_AI_TRADE_FILTER:
                 # Prepare indicators for AI analysis
@@ -878,7 +976,16 @@ class AutoTrader:
                 # Hard Stop-Loss and Take-Profit (Bracket Orders)
                 sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if self.dynamic_config else Config.STOP_LOSS_PCT) / 100.0
                 tp_pct = (self.dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if self.dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
-                
+            
+                # Risk Parity adjustment
+                risk_parity_pct = self.risk.calculate_risk_parity_size(symbol, current_equity, bars)
+                if Config.RISK_PARITY_ENABLED:
+                    log.info(f"Risk Parity suggested size: {risk_parity_pct*100:.2f}% (Base: {Config.RISK_PCT_PER_TRADE}%)")
+                    # We can either override qty here or use it to scale the base qty
+                    scale_factor = risk_parity_pct / (Config.RISK_PCT_PER_TRADE / 100.0)
+                    qty = qty * scale_factor
+                    if qty <= 0: continue
+
                 if action == "buy":
                     stop_loss_price = latest_price * (1 - sl_pct)
                     take_profit_price = latest_price * (1 + tp_pct)
@@ -953,7 +1060,12 @@ class AutoTrader:
                 self._clear_position_state(symbol)
                 continue
 
-            bars = self.data.get_recent_bars(symbol, minutes=30) # Increased lookback for indicators
+            # Scaling timeframe for multi-bot
+            lookback_minutes = 30
+            if self.timeframe == "15Min": lookback_minutes = 150
+            elif self.timeframe == "5Min": lookback_minutes = 75
+            
+            bars = self.data.get_recent_bars(symbol, minutes=lookback_minutes) # Increased lookback for indicators
             latest_price = self.data.get_latest_mid_price(symbol)
             if not latest_price:
                 continue
@@ -1013,7 +1125,7 @@ class AutoTrader:
                         except Exception:
                             pass
 
-                    should_exit, exit_reason = self.strategy.should_sell(
+                    should_exit, exit_reason, exit_fraction = self.strategy.should_sell(
                         entry_price, 
                         latest_price, 
                         bars, 
@@ -1023,7 +1135,16 @@ class AutoTrader:
                         is_manual=is_manual,
                         entry_time=entry_time_dt
                     )
-                    exit_qty = qty
+                    exit_qty = max(1, int(qty * exit_fraction))
+                    if exit_fraction < 1.0:
+                        # Mark that we have already taken this partial TP to avoid re-triggering
+                        if "TP 1" in exit_reason:
+                            if pos_info.get("tp1_hit"): should_exit = False
+                            else: pos_info["tp1_hit"] = True
+                        elif "TP 2" in exit_reason:
+                            if pos_info.get("tp2_hit"): should_exit = False
+                            else: pos_info["tp2_hit"] = True
+                        self._save_state()
 
             is_partial = (exit_qty < qty)
 

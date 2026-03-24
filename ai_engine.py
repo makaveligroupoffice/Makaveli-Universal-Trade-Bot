@@ -59,6 +59,50 @@ class AIEngine:
         """
         return self._ai_code_generation(current_code, f"Internet Research Summary:\n{research_summary}")
 
+    def ai_journal_trade(self, trade_data: dict) -> str:
+        """
+        GPT-based trade journaling: Explains why a trade was good or bad.
+        """
+        if not Config.AI_JOURNALING_ENABLED:
+            return "AI Journaling disabled."
+
+        prompt = (f"Analyze this trading result: {json.dumps(trade_data)}\n"
+                  f"Context: {trade_data.get('context', 'None')}\n"
+                  f"Was this a good trade? Explain the logic, potential errors, and improvements.")
+        
+        return self._query_openai(prompt)
+
+    def ai_evaluate_signal(self, symbol: str, indicators: dict) -> float:
+        """
+        AI trade evaluator: Scores a potential signal (0-100).
+        """
+        if not Config.AI_EVALUATOR_ENABLED:
+            return 50.0 # Default neutral
+            
+        prompt = (f"Evaluate a BUY signal for {symbol} with these indicators: {json.dumps(indicators)}\n"
+                  f"Provide a single confidence score from 0 to 100 based on technical confluence.")
+        
+        response = self._query_openai(prompt)
+        try:
+            # Extract number from response
+            import re
+            nums = re.findall(r'\d+', response)
+            return float(nums[0]) if nums else 50.0
+        except:
+            return 50.0
+
+    def _query_openai(self, prompt: str) -> str:
+        """Helper to query OpenAI API."""
+        try:
+            response = self.client.chat.completions.create(
+                model=Config.AI_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=300
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"AI Error: {e}"
+
     def extract_strategy_from_transcript(self, transcript: str):
         """Analyze a YouTube transcript to extract a trading strategy."""
         prompt = f"Analyze the following YouTube transcript from a trading video. Extract the core trading strategy, including entry rules, exit rules, indicators used, and timeframes mentioned. Format the result as a concise set of 'LESSONS LEARNED' for an algorithmic trading bot.\n\nTRANSCRIPT:\n{transcript}"

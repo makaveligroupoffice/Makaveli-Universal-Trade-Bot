@@ -49,8 +49,36 @@ class RiskManager:
         with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(self.state, f, indent=2)
 
+    def process_pnl_withdrawals(self, daily_pnl: float, notify_func=None):
+        """Checks if PnL thresholds are met and alerts/records for withdrawal."""
+        if daily_pnl <= Config.PROFIT_WITHDRAWAL_THRESHOLD_DOLLARS:
+            return
+            
+        trading_share = daily_pnl * (Config.PROFIT_SPLIT_TRADING_PCT / 100.0)
+        vault_share = daily_pnl * (Config.PROFIT_SPLIT_COLD_STORAGE_PCT / 100.0)
+        
+        msg = (f"🔥 VAULT TRANSFER ALERT\n"
+               f"Daily Profit: ${daily_pnl:.2f}\n"
+               f"Move to Tangem (30%): ${vault_share:.2f}\n"
+               f"Keep in Trading (70%): ${trading_share:.2f}")
+               
+        if notify_func:
+            notify_func(msg)
+            
+        # Record in audit trail
+        audit_msg = f"Vault transfer suggested: ${vault_share:.2f} (30% of ${daily_pnl:.2f})"
+        self.state["last_vault_transfer"] = datetime.now().isoformat()
+        self.state["last_vault_amount"] = vault_share
+        self._save_state()
+
     def _roll_day_if_needed(self) -> None:
+        # Weekly PnL Reset on Monday
         if self.state.get("date") != self._today_str():
+            # Process vault transfer before resetting daily
+            daily_pnl = float(self.state.get("daily_pnl", 0.0))
+            if daily_pnl > 0:
+                 self.process_pnl_withdrawals(daily_pnl)
+
             old_peak = self.state.get("peak_equity", Config.STARTING_EQUITY)
             old_weekly_pnl = self.state.get("weekly_pnl", 0.0)
             
@@ -152,6 +180,16 @@ class RiskManager:
         kelly_pct = win_rate - (1 - win_rate) / win_loss_ratio
         
         # Use Fractional Kelly (usually 0.5) to be conservative
+        # Profit Reinvestment / Capital Growth scaling
+        if Config.AUTO_REINVEST_PROFITS:
+            daily_pnl = float(self.state.get("daily_pnl", 0.0))
+            if daily_pnl > 0:
+                # Be more aggressive when in profit
+                kelly_pct *= (1.0 + (daily_pnl / Config.STARTING_EQUITY))
+            elif daily_pnl < 0:
+                # Be more conservative when in drawdown
+                kelly_pct *= (1.0 - (abs(daily_pnl) / Config.STARTING_EQUITY))
+        
         fractional_kelly = Config.KELLY_FRACTION * kelly_pct
         
         # Clamp between a minimum (0.5%) and maximum (Config.MAX_POSITION_SIZE_PCT)
@@ -167,6 +205,13 @@ class RiskManager:
         self.state["daily_pnl"] = float(self.state.get("daily_pnl", 0.0)) + float(pnl_change)
         self.state["weekly_pnl"] = float(self.state.get("weekly_pnl", 0.0)) + float(pnl_change)
         
+        if not is_entry and pnl_change != 0:
+            # Update consecutive losses
+            if pnl_change < 0:
+                self.state["consecutive_losses"] = self.state.get("consecutive_losses", 0) + 1
+            else:
+                self.state["consecutive_losses"] = 0
+
         # Track sectors for entries
         if is_entry and symbol:
             sector = self._get_symbol_sector(symbol)
@@ -212,7 +257,7 @@ class RiskManager:
         }
         return sector_map.get(symbol, "Other")
 
-    def can_trade(self, is_exit: bool = False, current_hhmm: int | None = None, symbol: str | None = None, current_equity: float | None = None) -> bool:
+    def can_trade(self, is_exit: bool = False, current_hhmm: int | None = None, symbol: str | None = None, current_equity: float | None = None, bars: list | None = None, total_at_risk: float = 0.0, timeframe: str = "1Min") -> bool:
         """
         Exit/sell trades should still be allowed even when risk blocks new buys.
         """
@@ -221,6 +266,20 @@ class RiskManager:
         if is_exit:
             return True
 
+        # 0. META-RISK ENGINE (Global Risk Cap)
+        if current_equity and total_at_risk > (current_equity * (Config.GLOBAL_RISK_CAP_PCT / 100.0)):
+            return False
+
+        # 0.1 Crisis Mode / Defensive AI
+        if bars and len(bars) >= 2:
+            # Sudden drop detection (flash crash logic)
+            last_close = float(bars[-1].close)
+            prev_close = float(bars[-2].close)
+            drop_pct = (prev_close - last_close) / prev_close
+            if drop_pct >= (Config.FLASH_CRASH_PROTECTION_PCT / 100.0):
+                # Shutdown and notify
+                return False 
+
         # 1. Trading Window
         now = current_hhmm if current_hhmm is not None else int(datetime.now().strftime("%H%M"))
         start = int(Config.ALLOWED_START_HHMM)
@@ -228,11 +287,12 @@ class RiskManager:
         if not (start <= now <= end):
             return False
 
-        # 2. Daily Trade Limit
-        if int(self.state.get("trades_today", 0)) >= Config.MAX_TRADES_PER_DAY:
+        # 2. Daily Trade Limit (Independent by timeframe)
+        max_trades = Config.MAX_SCALPING_TRADES_PER_DAY if timeframe == "1Min" else Config.MAX_SWING_TRADES_PER_DAY
+        if int(self.state.get("trades_today", 0)) >= max_trades:
             return False
 
-        # 3. Loss Limits (Daily & Weekly)
+        # 3. Loss Limits (Daily & Weekly) - NON-NEGOTIABLE HARD SHUTDOWN
         base_equity = current_equity if current_equity else Config.STARTING_EQUITY
         
         # Daily Loss
@@ -242,6 +302,7 @@ class RiskManager:
 
         daily_pnl = float(self.state.get("daily_pnl", 0.0))
         if daily_pnl < 0 and abs(daily_pnl) >= max_daily_loss:
+            # HARD SHUTDOWN
             return False
             
         # Weekly Loss
@@ -251,7 +312,13 @@ class RiskManager:
             
         weekly_pnl = float(self.state.get("weekly_pnl", 0.0))
         if weekly_pnl < 0 and abs(weekly_pnl) >= max_weekly_loss:
+            # HARD SHUTDOWN
             return False
+
+        # 3.1 Loss Pattern Kill Switch
+        if self.state.get("consecutive_losses", 0) >= 3:
+             # Stop trading after 3 consecutive losses to re-evaluate
+             return False
 
         # 4. Equity Drawdown Protection (Circuit Breaker)
         if current_equity:
@@ -267,9 +334,54 @@ class RiskManager:
             counts = self.state.get("sector_counts", {})
             if counts.get(sector, 0) >= Config.MAX_POSITIONS_PER_SECTOR:
                 return False
+        
+        # 6. Correlation Risk Control
+        # In multi-bot mode, check if we are already too exposed to a single direction
+        # across correlated assets (e.g., BTC/ETH)
+        # Simplified: If crypto sector count >= 2, only allow if they are in opposite directions?
+        # For now, just a hard limit on crypto positions.
+        if symbol and self._get_symbol_sector(symbol) == "Crypto":
+            crypto_count = counts.get("Crypto", 0)
+            if crypto_count >= 2: # Max 2 crypto positions
+                return False
 
-        # 6. Trade Cooldown
+        # 7. Trade Cooldown
         if symbol and self.is_in_cooldown(symbol):
             return False
 
+        # 8. Adaptive Frequency Control
+        if Config.ADAPTIVE_FREQUENCY_CONTROL:
+            # If we've traded a lot today and PnL is negative, slow down.
+            if int(self.state.get("trades_today", 0)) > 5 and float(self.state.get("daily_pnl", 0.0)) < 0:
+                return False
+
+        # 9. Market Stress Index (Avoid trading in chaotic conditions)
+        # In practice, this would check a collection of symbol bars. 
+        # For now, it's a placeholder logic within bot_runner's call.
+
         return True
+
+    def calculate_risk_parity_size(self, symbol: str, current_equity: float, bars: list) -> float:
+        """
+        Adjusts position size based on asset volatility (Risk Parity).
+        Higher volatility = Smaller position size.
+        """
+        if not Config.RISK_PARITY_ENABLED or not bars or len(bars) < 20:
+            return Config.RISK_PCT_PER_TRADE / 100.0
+            
+        from strategy import Strategy
+        df = Strategy._calculate_indicators(bars)
+        atr = df['atr'].iloc[-1]
+        price = df['close'].iloc[-1]
+        
+        # Risk Parity: Size = (Target Risk $) / (ATR * ATR_SL_MULTIPLIER)
+        risk_dollars = current_equity * (Config.RISK_PCT_PER_TRADE / 100.0)
+        risk_per_share = atr * Config.ATR_SL_MULTIPLIER
+        
+        if risk_per_share <= 0:
+            return 0.0
+            
+        shares = risk_dollars / risk_per_share
+        size_pct = (shares * price) / current_equity
+        
+        return min(size_pct, Config.MAX_ACCOUNT_DEPLOYMENT_PCT / 100.0)

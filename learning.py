@@ -170,6 +170,23 @@ class LearningEngine:
         elif avg_pnl > 5: # Arbitrary high profit
             self.state["min_rvol"] = max(self.state["min_rvol"] - 0.05, 1.2)
 
+        # 4. WEEKLY CONSISTENCY LOOP: Weekly strategy evaluation
+        is_monday = datetime.now().weekday() == 0
+        if is_monday:
+            # Analyze best and worst strategies of the week
+            from intelligence import SelfAdaptingStrategySystem
+            system = SelfAdaptingStrategySystem()
+            perf = system.update_performance() or {}
+            prioritize, disable = system.get_priority_strategies()
+            
+            if prioritize or disable:
+                msg = f"🔄 WEEKLY CONSISTENCY LOOP\nPrioritizing: {', '.join(prioritize)}\nDisabling: {', '.join(disable)}"
+                log.info(msg)
+                send_notification(msg, title="Weekly Consistency Update")
+                # We could auto-evolve code here to adjust weights/active strategies
+                if disable:
+                    self.evolve_code(f"DISABLE_STRATEGIES: {disable}")
+
         self.state["last_optimized"] = datetime.now().isoformat()
         self._save_model()
 

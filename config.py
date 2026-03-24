@@ -27,10 +27,10 @@ class Config:
     RISK_PER_TRADE_DOLLARS: float = float(os.getenv("RISK_PER_TRADE_DOLLARS", "1.50"))
     MAX_DAILY_LOSS_DOLLARS: float = float(os.getenv("MAX_DAILY_LOSS_DOLLARS", "7.50"))
     MAX_WEEKLY_LOSS_DOLLARS: float = float(os.getenv("MAX_WEEKLY_LOSS_DOLLARS", "25.00"))
-    RISK_PCT_PER_TRADE: float = float(os.getenv("RISK_PCT_PER_TRADE", "1.0")) # 1% of equity
-    MAX_DAILY_LOSS_PCT: float = float(os.getenv("MAX_DAILY_LOSS_PCT", "5.0")) # 5% of equity
-    MAX_WEEKLY_LOSS_PCT: float = float(os.getenv("MAX_WEEKLY_LOSS_PCT", "10.0"))
-    MIN_RISK_REWARD_RATIO: float = float(os.getenv("MIN_RISK_REWARD_RATIO", "2.0"))
+    RISK_PCT_PER_TRADE: float = float(os.getenv("RISK_PCT_PER_TRADE", "0.5")) # 0.5-1% per trade MAX
+    MAX_DAILY_LOSS_PCT: float = float(os.getenv("MAX_DAILY_LOSS_PCT", "3.0")) # 2-3% daily loss MAX
+    MAX_WEEKLY_LOSS_PCT: float = float(os.getenv("MAX_WEEKLY_LOSS_PCT", "6.0")) # 5-6% weekly loss MAX
+    MIN_RISK_REWARD_RATIO: float = float(os.getenv("MIN_RISK_REWARD_RATIO", "2.0")) # 1:2 minimum
     MAX_CORRELATION_THRESHOLD: float = float(os.getenv("MAX_CORRELATION_THRESHOLD", "0.7"))
     USE_PERCENTAGE_RISK: bool = os.getenv("USE_PERCENTAGE_RISK", "false").lower() == "true"
     MAX_TRADES_PER_DAY: int = int(os.getenv("MAX_TRADES_PER_DAY", "3"))
@@ -92,8 +92,18 @@ class Config:
         if s.strip()
     )
 
-    # Advanced Strategy Controls
-    MIN_ADX_TREND: float = float(os.getenv("MIN_ADX_TREND", "25.0"))
+    # Consistency Loop & Trade Score
+    MIN_TRADE_SCORE_THRESHOLD: float = float(os.getenv("MIN_TRADE_SCORE_THRESHOLD", "75.0"))
+    MAX_SCALPING_TRADES_PER_DAY: int = int(os.getenv("MAX_SCALPING_TRADES_PER_DAY", "10"))
+    MAX_SWING_TRADES_PER_DAY: int = int(os.getenv("MAX_SWING_TRADES_PER_DAY", "5"))
+    ENABLE_REENTRY_LOGIC: bool = os.getenv("ENABLE_REENTRY_LOGIC", "true").lower() == "true"
+    REENTRY_PULLBACK_PCT: float = float(os.getenv("REENTRY_PULLBACK_PCT", "0.5"))
+    EXIT_LADDER_ENABLED: bool = os.getenv("EXIT_LADDER_ENABLED", "true").lower() == "true"
+    SIGNAL_DELAY_FILTER_SECONDS: int = int(os.getenv("SIGNAL_DELAY_FILTER_SECONDS", "30"))
+    
+    # Liquidity & Order Flow
+    LIQUIDITY_POOL_LOOKBACK: int = int(os.getenv("LIQUIDITY_POOL_LOOKBACK", "50"))
+    VOLUME_DELTA_EMA_PERIOD: int = int(os.getenv("VOLUME_DELTA_EMA_PERIOD", "14"))
     ATR_SL_MULTIPLIER: float = float(os.getenv("ATR_SL_MULTIPLIER", "2.0"))
     ATR_TP_MULTIPLIER: float = float(os.getenv("ATR_TP_MULTIPLIER", "3.0"))
     BREAK_EVEN_PROFIT_PCT: float = float(os.getenv("BREAK_EVEN_PROFIT_PCT", "0.75")) # Move SL to entry at 0.75% profit
@@ -101,6 +111,33 @@ class Config:
     TIME_BASED_EXIT_MINUTES: int = int(os.getenv("TIME_BASED_EXIT_MINUTES", "0")) # 0 = disabled
     PROFIT_LOCK_PCT: float = float(os.getenv("PROFIT_LOCK_PCT", "2.5")) # Lock in profit at 2.5%
     PROFIT_LOCK_RETAIN_PCT: float = float(os.getenv("PROFIT_LOCK_RETAIN_PCT", "80.0")) # Keep 80% of peak profit
+    
+    # Capital Growth & Withdraw
+    PROFIT_WITHDRAWAL_THRESHOLD_DOLLARS: float = float(os.getenv("PROFIT_WITHDRAWAL_THRESHOLD_DOLLARS", "100.00"))
+    PROFIT_SPLIT_TRADING_PCT: float = float(os.getenv("PROFIT_SPLIT_TRADING_PCT", "70.0")) # 70% stays in trading
+    PROFIT_SPLIT_COLD_STORAGE_PCT: float = float(os.getenv("PROFIT_SPLIT_COLD_STORAGE_PCT", "30.0")) # 30% to cold storage
+    AUTO_REINVEST_PROFITS: bool = os.getenv("AUTO_REINVEST_PROFITS", "true").lower() == "true"
+    VAULT_TRANSFER_NOTIFICATION_ONLY: bool = os.getenv("VAULT_TRANSFER_NOTIFICATION_ONLY", "true").lower() == "true"
+
+    # Market Regime Intelligence
+    CHOP_ADX_THRESHOLD: float = float(os.getenv("CHOP_ADX_THRESHOLD", "20.0")) # Below 20 is chop
+    SESSION_AWARE_TRADING: bool = os.getenv("SESSION_AWARE_TRADING", "true").lower() == "true"
+    
+    # Multi-Bot Scaling
+    ENABLE_MULTI_BOT_MODE: bool = os.getenv("ENABLE_MULTI_BOT_MODE", "false").lower() == "true"
+    MASTER_RISK_CONTROL_ENABLED: bool = os.getenv("MASTER_RISK_CONTROL_ENABLED", "true").lower() == "true"
+
+    # Trade Quality Filter
+    MIN_TRADE_QUALITY_SCORE: float = float(os.getenv("MIN_TRADE_QUALITY_SCORE", "75.0"))
+    
+    # Crisis Mode
+    FLASH_CRASH_PROTECTION_PCT: float = float(os.getenv("FLASH_CRASH_PROTECTION_PCT", "5.0")) # 5% drop in 1 min triggers shutdown
+    VOLATILITY_SPIKE_KILL_SWITCH: bool = os.getenv("VOLATILITY_SPIKE_KILL_SWITCH", "true").lower() == "true"
+    NEWS_SHOCK_PAUSE_MINUTES: int = int(os.getenv("NEWS_SHOCK_PAUSE_MINUTES", "30"))
+
+    # AI Layer
+    AI_JOURNALING_ENABLED: bool = os.getenv("AI_JOURNALING_ENABLED", "true").lower() == "true"
+    AI_EVALUATOR_ENABLED: bool = os.getenv("AI_EVALUATOR_ENABLED", "true").lower() == "true"
 
     STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "2.0")) # Loosened from 1.5 to handle volatility
     TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "4.0")) # Increased to capture more profit on runners
@@ -164,6 +201,26 @@ class Config:
     CRYPTO_WHITELIST: tuple[str, ...] = tuple(
         s.strip().upper()
         for s in os.getenv("CRYPTO_WHITELIST", "BTC/USD,ETH/USD,SOL/USD").split(",")
+        if s.strip()
+    )
+
+    # 31-50 META-RISK & ADVANCED INTELLIGENCE
+    GLOBAL_RISK_CAP_PCT: float = float(os.getenv("GLOBAL_RISK_CAP_PCT", "20.0")) # Max 20% total portfolio risk
+    RISK_PARITY_ENABLED: bool = os.getenv("RISK_PARITY_ENABLED", "true").lower() == "true"
+    EDGE_DECAY_WINDOW: int = int(os.getenv("EDGE_DECAY_WINDOW", "50")) # Rolling 50 trades
+    EDGE_DECAY_THRESHOLD_WR: float = float(os.getenv("EDGE_DECAY_THRESHOLD_WR", "45.0")) # Disable if WR < 45%
+    CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "70.0")) # 0-100 score
+    ENTRY_DELAY_SECONDS: int = int(os.getenv("ENTRY_DELAY_SECONDS", "0")) # Wait X seconds before execution
+    ADAPTIVE_TP_ENABLED: bool = os.getenv("ADAPTIVE_TP_ENABLED", "true").lower() == "true"
+    EARLY_EXIT_MOMENTUM_LOSS: bool = os.getenv("EARLY_EXIT_MOMENTUM_LOSS", "true").lower() == "true"
+    CASHFLOW_WEEKLY_TARGET_PCT: float = float(os.getenv("CASHFLOW_WEEKLY_TARGET_PCT", "2.0")) # 2% weekly goal
+    MANUAL_APPROVAL_MODE: bool = os.getenv("MANUAL_APPROVAL_MODE", "false").lower() == "true"
+    DECISION_DELAY_MINS: int = int(os.getenv("DECISION_DELAY_MINS", "1")) # 1 min delay for confirmation
+    ADAPTIVE_FREQUENCY_CONTROL: bool = os.getenv("ADAPTIVE_FREQUENCY_CONTROL", "true").lower() == "true"
+    MARKET_STRESS_THRESHOLD: float = float(os.getenv("MARKET_STRESS_THRESHOLD", "2.0")) # Z-score for vol/corr spikes
+    EXPERIMENTAL_STRATEGIES: tuple[str, ...] = tuple(
+        s.strip().upper()
+        for s in os.getenv("EXPERIMENTAL_STRATEGIES", "").split(",")
         if s.strip()
     )
 
