@@ -5,6 +5,7 @@ import logging
 import zipfile
 import io
 import csv
+import threading
 from flask import Flask, render_template, jsonify, send_from_directory, send_file, request
 from flask_login import current_user
 from config import Config
@@ -62,6 +63,11 @@ def get_stats():
                 "pnl": float(p.unrealized_pl)
             })
             
+        # Performance Stats
+        from performance import PerformanceAnalyzer
+        analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
+        perf = analyzer.analyze_recent_trades(days=7) or {}
+
         return jsonify({
             "ok": True,
             "daily_pnl": risk_state.get("daily_pnl", 0.0),
@@ -69,7 +75,9 @@ def get_stats():
             "equity": equity,
             "operational_state": bot_state.get("operational_state", "SCANNING"),
             "bot_enabled": bot_state.get("enabled", True),
-            "positions": pos_data
+            "positions": pos_data,
+            "sharpe_ratio": perf.get("sharpe_ratio"),
+            "profit_factor": perf.get("profit_factor")
         })
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
@@ -216,6 +224,40 @@ def kill_switch():
         return jsonify({"ok": True, "message": "Kill switch activated, positions closing."})
     except Exception as e:
         logger.error(f"Error triggering kill switch: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/bot/invest-crypto", methods=["POST"])
+def invest_crypto():
+    data = request.json
+    if not data or data.get("token") != Config.AUTH_TOKEN:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 403
+
+    def run_investment():
+        from crypto_investor import run_crypto_investor
+        try:
+            run_crypto_investor()
+        except Exception as e:
+            logger.error(f"Crypto investment scan failed: {e}")
+
+    thread = threading.Thread(target=run_investment)
+    thread.start()
+
+    return jsonify({"ok": True, "message": "Crypto investment scan started in background."})
+
+@app.before_request
+def restrict_ip():
+    if Config.IP_WHITELIST:
+        client_ip = request.remote_addr
+        if client_ip not in Config.IP_WHITELIST and client_ip != '127.0.0.1':
+            return jsonify({"ok": False, "error": "IP Forbidden"}), 403
+
+@app.route("/api/bot/audit-trail")
+def get_audit_trail():
+    try:
+        from bot_state import BotStateStore
+        state = BotStateStore(Config.BOT_STATE_FILE).load()
+        return jsonify({"ok": True, "audit_trail": state.get("audit_trail", [])})
+    except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/toggle", methods=["POST"])

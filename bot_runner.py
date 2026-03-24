@@ -38,6 +38,8 @@ logging.basicConfig(
     ],
 )
 
+from crypto_investor import CryptoInvestor
+
 log = logging.getLogger("autobot")
 
 # We need a dummy flask app context for DB access
@@ -82,6 +84,7 @@ class AutoTrader:
         self.researcher = ResearchEngine()
         self.backup_mgr = BackupManager()
         self.updater = AutoUpdater()
+        self.crypto_investor = CryptoInvestor(self.broker)
         self.state = self.state_store.load()
         self.consecutive_failures = 0
         self.safe_mode = False
@@ -705,8 +708,28 @@ class AutoTrader:
         )
 
         for symbol, momentum in ranked_candidates:
+            # 5. Partial Entry Support (Scaling in)
+            is_partial_entry = False
             if symbol in self.positions:
-                continue
+                if not Config.ENABLE_PARTIAL_ENTRIES:
+                    continue
+                
+                pos_info = self.positions[symbol]
+                # Only scale in if the position is already profitable and we haven't scaled in too many times
+                if pos_info.get("side") == "buy" and momentum > 0:
+                     # Check profitability
+                     entry_price = pos_info.get("entry_price", 0)
+                     latest_price = self.data.get_latest_mid_price(symbol)
+                     if latest_price and latest_price > entry_price * 1.01: # 1% profit minimum to scale in
+                         is_partial_entry = True
+                elif pos_info.get("side") == "short" and momentum < 0:
+                     entry_price = pos_info.get("entry_price", 0)
+                     latest_price = self.data.get_latest_mid_price(symbol)
+                     if latest_price and latest_price < entry_price * 0.99: # 1% profit minimum to scale in
+                         is_partial_entry = True
+                
+                if not is_partial_entry:
+                    continue
             
             # Check if there is already a pending order for this symbol
             if any(info.get("symbol") == symbol for info in self.pending_orders.values()):
@@ -786,6 +809,14 @@ class AutoTrader:
             if action == "short" and relative_strength > -0.2:
                 log.info(f"Skipping {symbol}: Weak relative weakness ({relative_strength:.2f}%) vs SPY.")
                 continue
+
+            # Risk/Reward Enforcement
+            sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if self.dynamic_config else Config.STOP_LOSS_PCT) / 100.0
+            tp_pct = (self.dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if self.dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
+            rr_ratio = tp_pct / sl_pct if sl_pct > 0 else 0
+            if rr_ratio < Config.MIN_RISK_REWARD_RATIO:
+                log.info(f"Skipping {symbol}: Risk/Reward ratio {rr_ratio:.2f} is below minimum {Config.MIN_RISK_REWARD_RATIO}")
+                continue
                 
             # Increase threshold for NEUTRAL market to avoid chop
             effective_min_strength = 0.70 if market_regime == "NEUTRAL" else 0.60
@@ -816,6 +847,13 @@ class AutoTrader:
                 continue
 
             qty = self._calc_qty(latest_price, symbol, signal_strength=strength, indicators=last_indicators)
+            if Config.ENABLE_PARTIAL_ENTRIES and not is_partial_entry:
+                # First entry is partial
+                qty = qty * (Config.PARTIAL_ENTRY_PCT / 100.0)
+            elif is_partial_entry:
+                # Scaling in: use the remaining or a smaller piece
+                qty = qty * (Config.PARTIAL_ENTRY_PCT / 100.0)
+
             if qty <= 0:
                 continue
 
@@ -857,10 +895,15 @@ class AutoTrader:
                 self.state["pending_orders"][oid] = {
                     "symbol": symbol,
                     "side": action,
-                    "submitted_at": self._now_ts()
+                    "submitted_at": self._now_ts(),
+                    "entry_time": datetime.now().isoformat()
                 }
                 self.state.setdefault("last_order_statuses", {})[oid] = self._normalize_order_status(getattr(order, "status", None))
                 self._save_state()
+                
+                # Audit Trail Log
+                from bot_state import BotStateStore
+                BotStateStore(Config.BOT_STATE_FILE).log_action(f"{action.upper()} ENTRY", f"symbol={symbol} qty={qty} reason={reason}")
 
                 self.trade_journal.record(
                     f"{action}_submitted",
@@ -961,7 +1004,15 @@ class AutoTrader:
                     pos_info["sold_half"] = True
                     self._save_state()
                 else:
-                    # 2. Standard Exit Rules (should_sell)
+            # 2. Standard Exit Rules (should_sell)
+                    # Convert entry_time string to datetime
+                    entry_time_dt = None
+                    if pos_info.get("entry_time"):
+                        try:
+                            entry_time_dt = datetime.fromisoformat(pos_info["entry_time"])
+                        except Exception:
+                            pass
+
                     should_exit, exit_reason = self.strategy.should_sell(
                         entry_price, 
                         latest_price, 
@@ -969,7 +1020,8 @@ class AutoTrader:
                         high_since_entry=pos_info["high_since_entry"],
                         side=side,
                         dynamic_config=self.dynamic_config,
-                        is_manual=is_manual
+                        is_manual=is_manual,
+                        entry_time=entry_time_dt
                     )
                     exit_qty = qty
 
@@ -979,6 +1031,9 @@ class AutoTrader:
                 continue
 
             try:
+                # Record cooldown
+                self.risk.record_cooldown(symbol)
+                
                 # Exit with Market Order to ensure execution
                 limit_price = None
                 action = "sell" if side == "buy" else "cover"
@@ -1152,6 +1207,8 @@ class AutoTrader:
                         # Run Nightly Research before maintenance
                         try:
                             self.researcher.perform_internet_research()
+                            # Perform Crypto Investment Scan after research
+                            self.crypto_investor.scan_and_invest()
                             # Also perform backup after research
                             self.backup_mgr.create_backup()
                         except Exception as e:
@@ -1175,6 +1232,8 @@ class AutoTrader:
                     # Run Nightly Research before final shutdown
                     try:
                         self.researcher.perform_internet_research()
+                        # Perform Crypto Investment Scan after research
+                        self.crypto_investor.scan_and_invest()
                         # Also perform backup after research
                         self.backup_mgr.create_backup()
                     except Exception as e:

@@ -11,6 +11,8 @@ class Config:
     # Security
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "change_me")
     AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "admin-token-12345")
+    API_KEY_ENCRYPTION_KEY: str = os.getenv("API_KEY_ENCRYPTION_KEY", "secure-encryption-key-12345")
+    IP_WHITELIST: tuple[str, ...] = tuple(s.strip() for s in os.getenv("IP_WHITELIST", "127.0.0.1").split(",") if s.strip())
 
     # Broker
     BROKER: str = os.getenv("BROKER", "ALPACA")
@@ -24,8 +26,12 @@ class Config:
     STARTING_EQUITY: float = float(os.getenv("STARTING_EQUITY", "500"))
     RISK_PER_TRADE_DOLLARS: float = float(os.getenv("RISK_PER_TRADE_DOLLARS", "1.50"))
     MAX_DAILY_LOSS_DOLLARS: float = float(os.getenv("MAX_DAILY_LOSS_DOLLARS", "7.50"))
+    MAX_WEEKLY_LOSS_DOLLARS: float = float(os.getenv("MAX_WEEKLY_LOSS_DOLLARS", "25.00"))
     RISK_PCT_PER_TRADE: float = float(os.getenv("RISK_PCT_PER_TRADE", "1.0")) # 1% of equity
     MAX_DAILY_LOSS_PCT: float = float(os.getenv("MAX_DAILY_LOSS_PCT", "5.0")) # 5% of equity
+    MAX_WEEKLY_LOSS_PCT: float = float(os.getenv("MAX_WEEKLY_LOSS_PCT", "10.0"))
+    MIN_RISK_REWARD_RATIO: float = float(os.getenv("MIN_RISK_REWARD_RATIO", "2.0"))
+    MAX_CORRELATION_THRESHOLD: float = float(os.getenv("MAX_CORRELATION_THRESHOLD", "0.7"))
     USE_PERCENTAGE_RISK: bool = os.getenv("USE_PERCENTAGE_RISK", "false").lower() == "true"
     MAX_TRADES_PER_DAY: int = int(os.getenv("MAX_TRADES_PER_DAY", "3"))
     MAX_OPEN_POSITIONS: int = int(os.getenv("MAX_OPEN_POSITIONS", "5"))
@@ -69,6 +75,7 @@ class Config:
 
     # Strategy controls
     ENABLE_EXTENDED_HOURS: bool = os.getenv("ENABLE_EXTENDED_HOURS", "true").lower() == "true"
+    TRADE_COOLDOWN_MINUTES: int = int(os.getenv("TRADE_COOLDOWN_MINUTES", "30")) # Cooldown after exit
     ENABLE_INTERNET_RESEARCH: bool = os.getenv("ENABLE_INTERNET_RESEARCH", "true").lower() == "true"
     RESEARCH_INTERVAL_SECONDS: int = int(os.getenv("RESEARCH_INTERVAL_SECONDS", "86400")) # 24 hours
     ENABLE_NEW_ENTRIES: bool = os.getenv("ENABLE_NEW_ENTRIES", "true").lower() == "true"
@@ -91,6 +98,9 @@ class Config:
     ATR_TP_MULTIPLIER: float = float(os.getenv("ATR_TP_MULTIPLIER", "3.0"))
     BREAK_EVEN_PROFIT_PCT: float = float(os.getenv("BREAK_EVEN_PROFIT_PCT", "0.75")) # Move SL to entry at 0.75% profit
     ENABLE_DYNAMIC_ATR_EXITS: bool = os.getenv("ENABLE_DYNAMIC_ATR_EXITS", "true").lower() == "true"
+    TIME_BASED_EXIT_MINUTES: int = int(os.getenv("TIME_BASED_EXIT_MINUTES", "0")) # 0 = disabled
+    PROFIT_LOCK_PCT: float = float(os.getenv("PROFIT_LOCK_PCT", "2.5")) # Lock in profit at 2.5%
+    PROFIT_LOCK_RETAIN_PCT: float = float(os.getenv("PROFIT_LOCK_RETAIN_PCT", "80.0")) # Keep 80% of peak profit
 
     STOP_LOSS_PCT: float = float(os.getenv("STOP_LOSS_PCT", "2.0")) # Loosened from 1.5 to handle volatility
     TAKE_PROFIT_PCT: float = float(os.getenv("TAKE_PROFIT_PCT", "4.0")) # Increased to capture more profit on runners
@@ -102,6 +112,8 @@ class Config:
     MARKET_CLOSE_LIQUIDATION_WINDOW_MINS: int = int(os.getenv("MARKET_CLOSE_LIQUIDATION_WINDOW_MINS", "15"))
 
     # Partial Take Profit Controls (Dollar based)
+    ENABLE_PARTIAL_ENTRIES: bool = os.getenv("ENABLE_PARTIAL_ENTRIES", "true").lower() == "true"
+    PARTIAL_ENTRY_PCT: float = float(os.getenv("PARTIAL_ENTRY_PCT", "50.0")) # Buy 50% now, 50% later on trend confirmation
     PARTIAL_TP1_DOLLARS: float = float(os.getenv("PARTIAL_TP1_DOLLARS", "10.00"))
     PARTIAL_TP2_DOLLARS: float = float(os.getenv("PARTIAL_TP2_DOLLARS", "15.00"))
     SHORT_EXIT_PROFIT_DOLLARS: float = float(os.getenv("SHORT_EXIT_PROFIT_DOLLARS", "5.00"))
@@ -113,10 +125,10 @@ class Config:
     # Multi-Strategy Selection
     # Supported: TREND, RSI, BOLLINGER, MACD, BREAKOUT, BARUPDN, BOLLINGER_DIRECTED, CONSECUTIVE, 
     # GREEDY, INSIDE_BAR, KELTNER, MOMENTUM, MA_2LINE_CROSS, MA_CROSS, OUTSIDE_BAR, PIVOT_REVERSAL, 
-    # PRICE_CHANNEL, ROB_BOOKER_ADX, STOCHASTIC, SUPERTREND, TECHNICAL_RATINGS, VOLTY_EXPAN_CLOSE, AGGRESSIVE, PATTERNS, CHART, AUTO_TREND
+    # PRICE_CHANNEL, ROB_BOOKER_ADX, STOCHASTIC, SUPERTREND, TECHNICAL_RATINGS, VOLTY_EXPAN_CLOSE, AGGRESSIVE, PATTERNS, CHART, AUTO_TREND, SCALPING
     ACTIVE_STRATEGIES: tuple[str, ...] = tuple(
         s.strip().upper()
-        for s in os.getenv("ACTIVE_STRATEGIES", "TREND,RSI,BOLLINGER,MACD,BREAKOUT,MA_CROSS,STOCHASTIC,PATTERNS,CHART,AUTO_TREND").split(",")
+        for s in os.getenv("ACTIVE_STRATEGIES", "TREND,RSI,BOLLINGER,MACD,BREAKOUT,MA_CROSS,STOCHASTIC,PATTERNS,CHART,AUTO_TREND,SCALPING").split(",")
         if s.strip()
     )
 
@@ -147,7 +159,26 @@ class Config:
     ENABLE_LOG_SUBMISSION: bool = os.getenv("ENABLE_LOG_SUBMISSION", "false").lower() == "true"
     SUBMIT_LOGS_EVERY_SECONDS: int = int(os.getenv("SUBMIT_LOGS_EVERY_SECONDS", "3600")) # 1 hour
 
+    # Crypto Long-Term Investment
+    CRYPTO_INVEST_EQUITY_PCT: float = float(os.getenv("CRYPTO_INVEST_EQUITY_PCT", "1.0")) # 1% of total equity for crypto long-term
+    CRYPTO_WHITELIST: tuple[str, ...] = tuple(
+        s.strip().upper()
+        for s in os.getenv("CRYPTO_WHITELIST", "BTC/USD,ETH/USD,SOL/USD").split(",")
+        if s.strip()
+    )
+
     # Notifications (Discord Webhook or Pushover)
     DISCORD_WEBHOOK_URL: str | None = os.getenv("DISCORD_WEBHOOK_URL")
     PUSHOVER_USER_KEY: str | None = os.getenv("PUSHOVER_USER_KEY")
     PUSHOVER_APP_TOKEN: str | None = os.getenv("PUSHOVER_APP_TOKEN")
+    TELEGRAM_BOT_TOKEN: str | None = os.getenv("TELEGRAM_BOT_TOKEN")
+    TELEGRAM_CHAT_ID: str | None = os.getenv("TELEGRAM_CHAT_ID")
+    EMAIL_SMTP_SERVER: str | None = os.getenv("EMAIL_SMTP_SERVER")
+    EMAIL_SMTP_PORT: int = int(os.getenv("EMAIL_SMTP_PORT", "587"))
+    EMAIL_USER: str | None = os.getenv("EMAIL_USER")
+    EMAIL_PASS: str | None = os.getenv("EMAIL_PASS")
+    EMAIL_RECEIVER: str | None = os.getenv("EMAIL_RECEIVER")
+    SMS_TWILIO_SID: str | None = os.getenv("SMS_TWILIO_SID")
+    SMS_TWILIO_TOKEN: str | None = os.getenv("SMS_TWILIO_TOKEN")
+    SMS_TWILIO_NUMBER: str | None = os.getenv("SMS_TWILIO_NUMBER")
+    SMS_RECEIVER: str | None = os.getenv("SMS_RECEIVER")

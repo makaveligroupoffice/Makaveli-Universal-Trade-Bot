@@ -16,10 +16,11 @@ class BotStateStore:
             "enabled": True,  # Global toggle for the trading engine
             "kill_switch_active": False,  # Emergency stop flag
             "sharing_authorized": False,  # Has a valid token been used?
-            "positions": {},  # symbol -> {entry_price, high_since_entry, side}
+            "positions": {},  # symbol -> {entry_price, high_since_entry, side, entry_time}
             "pending_orders": {},  # order_id -> {symbol, side, submitted_at}
             "last_order_statuses": {}, # order_id -> status
             "operational_state": "SCANNING", # SCANNING, TRADING, READING
+            "audit_trail": [], # List of all actions taken (time, action, reason)
             "dynamic_config": {
                 "stop_loss_pct": Config.STOP_LOSS_PCT,
                 "take_profit_pct": Config.TAKE_PROFIT_PCT,
@@ -57,5 +58,22 @@ class BotStateStore:
         return state
 
     def save(self, state: dict) -> None:
+        # Keep audit trail size manageable
+        if "audit_trail" in state and len(state["audit_trail"]) > 500:
+            state["audit_trail"] = state["audit_trail"][-500:]
+
         with open(self.path, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
+
+    def log_action(self, action: str, reason: str = "") -> None:
+        state = self.load()
+        if "audit_trail" not in state:
+            state["audit_trail"] = []
+        
+        from datetime import datetime
+        state["audit_trail"].append({
+            "timestamp": datetime.now().isoformat(),
+            "action": action,
+            "reason": reason
+        })
+        self.save(state)

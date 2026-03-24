@@ -22,6 +22,8 @@ function updateStats() {
                 
                 document.getElementById('accountEquity').innerText = `$${data.equity.toLocaleString()}`;
                 document.getElementById('tradeCount').innerText = data.trades_today;
+                if (data.sharpe_ratio) document.getElementById('sharpeRatio').innerText = data.sharpe_ratio.toFixed(2);
+                if (data.profit_factor) document.getElementById('profitFactor').innerText = data.profit_factor.toFixed(2);
                 document.getElementById('system-time').innerText = `LAST SYNC: ${new Date().toLocaleTimeString()}`;
 
                 // Update Bot Engine Toggle UI
@@ -204,6 +206,29 @@ function deepReadingSession() {
     });
 }
 
+function investCrypto() {
+    const token = prompt('Enter Authorization Token to authorize crypto investment:');
+    if (!token) return;
+
+    if (!confirm('The bot will scan for long-term crypto investments and buy them based on AI analysis. CONTINUE?')) return;
+
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> STARTING CRYPTO INVESTMENT SCAN...<br>`;
+    
+    fetch('/api/bot/invest-crypto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+    }).then(res => res.json()).then(data => {
+        if (data.ok) {
+            log.innerHTML += `> SERVER: ${data.message}<br>`;
+        } else {
+            log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+        }
+        log.scrollTop = log.scrollHeight;
+    });
+}
+
 // BOT ANIMATION (Ported from Tkinter to Web Canvas)
 function drawBot() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -268,6 +293,29 @@ function drawBot() {
     requestAnimationFrame(drawBot);
 }
 
+function updateAuditTrail() {
+    fetch('/api/bot/audit-trail')
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                const trailContainer = document.getElementById('auditTrail');
+                if (data.audit_trail && data.audit_trail.length > 0) {
+                    const trail = [...data.audit_trail].reverse();
+                    trailContainer.innerHTML = trail.map(item => {
+                        const timeStr = item.timestamp ? item.timestamp.split('T')[1].split('.')[0] : '---';
+                        return `<div class="border-l border-green-900 pl-1 mb-1">
+                                    <span class="text-blue-500">[${timeStr}]</span> 
+                                    <span class="text-white uppercase">${item.action}</span> 
+                                    <span class="text-gray-500 italic">${item.reason || ''}</span>
+                                </div>`;
+                    }).join('');
+                }
+            }
+        });
+}
+
 setInterval(updateStats, 2000);
+setInterval(updateAuditTrail, 10000);
 updateStats();
+updateAuditTrail();
 drawBot();

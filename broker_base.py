@@ -2,11 +2,11 @@ from abc import ABC, abstractmethod
 
 class BrokerBase(ABC):
     @abstractmethod
-    def buy(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):
+    def buy(self, symbol: str, qty: float, limit_price: float | None = None, stop_price: float | None = None, stop_limit_price: float | None = None, extended_hours: bool = False):
         pass
 
     @abstractmethod
-    def sell(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):
+    def sell(self, symbol: str, qty: float, limit_price: float | None = None, stop_price: float | None = None, stop_limit_price: float | None = None, extended_hours: bool = False):
         pass
 
     @abstractmethod

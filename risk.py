@@ -30,8 +30,10 @@ class RiskManager:
             "trades_today": 0,
             "seen_alert_ids": [],
             "daily_pnl": 0.0,
+            "weekly_pnl": 0.0,
             "peak_equity": Config.STARTING_EQUITY,
             "sector_counts": {},
+            "symbol_correlations": {}, # Symbol to [returns_list]
         }
 
     def _load_state(self) -> dict:
@@ -50,8 +52,15 @@ class RiskManager:
     def _roll_day_if_needed(self) -> None:
         if self.state.get("date") != self._today_str():
             old_peak = self.state.get("peak_equity", Config.STARTING_EQUITY)
+            old_weekly_pnl = self.state.get("weekly_pnl", 0.0)
+            
+            # Reset weekly PnL on Monday
+            is_monday = datetime.now().weekday() == 0
+            new_weekly_pnl = 0.0 if is_monday else old_weekly_pnl
+            
             self.state = self._default_state()
             self.state["peak_equity"] = old_peak # Peak equity persists across days
+            self.state["weekly_pnl"] = new_weekly_pnl
             self._save_state()
 
     @staticmethod
@@ -89,6 +98,29 @@ class RiskManager:
         seen.add(str(alert_id))
         self.state["seen_alert_ids"] = list(seen)
         self._save_state()
+
+    def record_cooldown(self, symbol: str) -> None:
+        self._roll_day_if_needed()
+        cooldowns = self.state.get("cooldowns", {})
+        cooldowns[symbol] = datetime.now().isoformat()
+        self.state["cooldowns"] = cooldowns
+        self._save_state()
+
+    def is_in_cooldown(self, symbol: str) -> bool:
+        self._roll_day_if_needed()
+        cooldowns = self.state.get("cooldowns", {})
+        if symbol not in cooldowns:
+            return False
+        
+        last_exit_str = cooldowns[symbol]
+        try:
+            last_exit = datetime.fromisoformat(last_exit_str)
+            elapsed = (datetime.now() - last_exit).total_seconds() / 60.0
+            if elapsed < Config.TRADE_COOLDOWN_MINUTES:
+                return True
+        except Exception:
+            pass
+        return False
 
     def check_spread(self, symbol: str) -> bool:
         """
@@ -133,6 +165,7 @@ class RiskManager:
         self.state["trades_today"] = int(self.state.get("trades_today", 0)) + 1
         # Accumulate PnL
         self.state["daily_pnl"] = float(self.state.get("daily_pnl", 0.0)) + float(pnl_change)
+        self.state["weekly_pnl"] = float(self.state.get("weekly_pnl", 0.0)) + float(pnl_change)
         
         # Track sectors for entries
         if is_entry and symbol:
@@ -199,13 +232,25 @@ class RiskManager:
         if int(self.state.get("trades_today", 0)) >= Config.MAX_TRADES_PER_DAY:
             return False
 
-        # 3. Daily Loss Limit
-        max_loss = Config.MAX_DAILY_LOSS_DOLLARS
+        # 3. Loss Limits (Daily & Weekly)
+        base_equity = current_equity if current_equity else Config.STARTING_EQUITY
+        
+        # Daily Loss
+        max_daily_loss = Config.MAX_DAILY_LOSS_DOLLARS
         if Config.USE_PERCENTAGE_RISK:
-            base_equity = current_equity if current_equity else Config.STARTING_EQUITY
-            max_loss = base_equity * (Config.MAX_DAILY_LOSS_PCT / 100.0)
+            max_daily_loss = base_equity * (Config.MAX_DAILY_LOSS_PCT / 100.0)
 
-        if abs(float(self.state.get("daily_pnl", 0.0))) >= max_loss and float(self.state.get("daily_pnl", 0.0)) < 0:
+        daily_pnl = float(self.state.get("daily_pnl", 0.0))
+        if daily_pnl < 0 and abs(daily_pnl) >= max_daily_loss:
+            return False
+            
+        # Weekly Loss
+        max_weekly_loss = Config.MAX_WEEKLY_LOSS_DOLLARS
+        if Config.USE_PERCENTAGE_RISK:
+            max_weekly_loss = base_equity * (Config.MAX_WEEKLY_LOSS_PCT / 100.0)
+            
+        weekly_pnl = float(self.state.get("weekly_pnl", 0.0))
+        if weekly_pnl < 0 and abs(weekly_pnl) >= max_weekly_loss:
             return False
 
         # 4. Equity Drawdown Protection (Circuit Breaker)
@@ -222,5 +267,9 @@ class RiskManager:
             counts = self.state.get("sector_counts", {})
             if counts.get(sector, 0) >= Config.MAX_POSITIONS_PER_SECTOR:
                 return False
+
+        # 6. Trade Cooldown
+        if symbol and self.is_in_cooldown(symbol):
+            return False
 
         return True

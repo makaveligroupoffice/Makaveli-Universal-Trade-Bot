@@ -131,6 +131,27 @@ class Strategy:
         # --- Volume Indicators ---
         df['avg_volume20'] = df['volume'].rolling(20).mean()
         df['rvol'] = df['volume'] / df['avg_volume20']
+        df['volume_spike'] = df['volume'] > (df['avg_volume20'] * 3.0)
+
+        # --- Liquidity Zones & Order Blocks (Simplified Detection) ---
+        # Order Block: Large candle preceding a strong move, where price consolidates later
+        df['body_size'] = (df['close'] - df['open']).abs()
+        df['is_bullish_ob'] = (df['close'] < df['open']) & (df['volume'] > df['avg_volume20'] * 1.5) & (df['close'].shift(-1) > df['high'])
+        df['is_bearish_ob'] = (df['close'] > df['open']) & (df['volume'] > df['avg_volume20'] * 1.5) & (df['close'].shift(-1) < df['low'])
+
+        # Fair Value Gap (FVG)
+        df['fvg_bull'] = (df['low'] > df['high'].shift(2))
+        df['fvg_bear'] = (df['high'] < df['low'].shift(2))
+
+        # Break of Structure (BOS)
+        df['hh'] = (df['high'] > df['high'].shift(1).rolling(10).max())
+        df['ll'] = (df['low'] < df['low'].shift(1).rolling(10).min())
+        df['bos_bull'] = df['hh'] & (df['close'] > df['high'].shift(1))
+        df['bos_bear'] = df['ll'] & (df['close'] < df['low'].shift(1))
+
+        # Liquidity Sweep
+        df['sweep_low'] = (df['low'] < df['low'].rolling(20).min().shift(1)) & (df['close'] > df['low'].rolling(20).min().shift(1))
+        df['sweep_high'] = (df['high'] > df['high'].rolling(20).max().shift(1)) & (df['close'] < df['high'].rolling(20).max().shift(1))
 
         # --- Supertrend ---
         multiplier = 3.0
@@ -173,7 +194,14 @@ class Strategy:
         df['supertrend'] = supertrend
         df['supertrend_bull'] = (df['close'] > df['supertrend'])
 
-        # --- Technical Ratings (Simplified) ---
+        # --- Technical Ratings & Momentum Scoring ---
+        # Momentum Scoring System (0-100)
+        df['mom_rsi'] = df['rsi14'] / 100.0
+        df['mom_macd'] = (df['macd_hist'] - df['macd_hist'].rolling(50).min()) / (df['macd_hist'].rolling(50).max() - df['macd_hist'].rolling(50).min())
+        df['mom_adx'] = df['adx'] / 100.0
+        df['momentum_score'] = (df['mom_rsi'] + df['mom_macd'] + df['mom_adx']) / 3.0 * 100.0
+
+        # Technical Ratings (Simplified)
         # Combine signals from RSI, MACD, Stoch, and MAs
         # Buy = 1, Neutral = 0, Sell = -1
         df['tr_rsi'] = df['rsi14'].apply(lambda x: 1 if x < 30 else (-1 if x > 70 else 0))
@@ -320,7 +348,19 @@ class Strategy:
                 strength_score += 0.5
                 pa_match = True
 
-        # 4. FAMILY: BREAKOUT / VOLUME
+        # 4. FAMILY: SCALPING (1-minute aggressive)
+        scalp_match = False
+        if "SCALPING" in active:
+             # Fast EMAs (9/21) cross
+             ema_cross = last['sma10'] > last['sma20'] and prev['sma10'] <= prev['sma20']
+             # Volatility requirement
+             vol_ok = last['atr14'] > (last['close'] * 0.001) # Minimum movement
+             if ema_cross and vol_ok and last['rvol'] > 1.5:
+                 matches.append("SCALP_CROSS")
+                 strength_score += 0.4
+                 scalp_match = True
+
+        # 5. FAMILY: BREAKOUT / VOLUME
         break_match = False
         if "BREAKOUT" in active:
             highest_20 = df['high'].rolling(20).max().iloc[-2]
@@ -331,7 +371,7 @@ class Strategy:
 
         # --- CONFLUENCE LOGIC ---
         # We need at least 2 families or 1 very strong signal (Sniper)
-        num_families = sum([trend_match, mom_match, pa_match, break_match])
+        num_families = sum([trend_match, mom_match, pa_match, break_match, scalp_match])
         
         # Final Decision
         final_strength = min(1.0, strength_score)
@@ -494,6 +534,18 @@ class Strategy:
                 strength_score += 0.5
                 pa_match = True
 
+        # 4. FAMILY: SCALPING (1-minute aggressive short)
+        scalp_match = False
+        if "SCALPING" in active:
+             # Fast EMAs (9/21) cross down
+             ema_cross = last['sma10'] < last['sma20'] and prev['sma10'] >= prev['sma20']
+             # Volatility requirement
+             vol_ok = last['atr14'] > (last['close'] * 0.001) # Minimum movement
+             if ema_cross and vol_ok and last['rvol'] > 1.5:
+                 matches.append("SCALP_SHORT_CROSS")
+                 strength_score += 0.4
+                 scalp_match = True
+
         # 4. FAMILY: BREAKOUT / VOLUME
         break_match = False
         if "BREAKOUT" in active:
@@ -504,7 +556,7 @@ class Strategy:
                 break_match = True
 
         # --- CONFLUENCE LOGIC ---
-        num_families = sum([trend_match, mom_match, pa_match, break_match])
+        num_families = sum([trend_match, mom_match, pa_match, break_match, scalp_match])
         # Final Decision
         final_strength = min(1.0, strength_score)
         
@@ -531,15 +583,44 @@ class Strategy:
         return False, "insufficient confluence or signal strength", 0.0, last_indicators
 
     @staticmethod
-    def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None, is_manual: bool = False) -> tuple[bool, str]:
+    def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None, is_manual: bool = False, entry_time: datetime | None = None) -> tuple[bool, str]:
         if current_price <= 0:
             return False, "invalid current price"
+
+        # --- Time-Based Exit ---
+        if entry_time and Config.TIME_BASED_EXIT_MINUTES > 0:
+            elapsed = (datetime.now() - entry_time).total_seconds() / 60.0
+            if elapsed >= Config.TIME_BASED_EXIT_MINUTES:
+                return True, f"time-based exit hit ({Config.TIME_BASED_EXIT_MINUTES} mins elapsed)"
 
         # Use dynamic config if provided, else fallback to global config
         sl_pct = (dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if dynamic_config else Config.STOP_LOSS_PCT) / 100.0
         tp_pct = (dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
         ts_pct = Config.TRAILING_STOP_PCT / 100.0 
         ts_activation_pct = Config.TRAILING_STOP_ACTIVATION_PCT / 100.0
+
+        # --- Profit Lock System ---
+        profit_lock_pct = Config.PROFIT_LOCK_PCT / 100.0
+        profit_lock_retain_pct = Config.PROFIT_LOCK_RETAIN_PCT / 100.0
+        is_profit_locked = False
+        if entry_price > 0:
+            if side == "buy":
+                max_profit_pct = (high_since_entry / entry_price) - 1 if high_since_entry else 0
+                if max_profit_pct >= profit_lock_pct:
+                    is_profit_locked = True
+                    # Exit if we drop below the locked percentage of PEAK profit
+                    # e.g. if we reached 2.5%, and retain 80%, we exit at 2.0%
+                    lock_exit_price = entry_price * (1 + (max_profit_pct * profit_lock_retain_pct))
+                    if current_price <= lock_exit_price:
+                        return True, f"profit lock hit: peak {max_profit_pct*100:.2f}% (locked {max_profit_pct*profit_lock_retain_pct*100:.2f}%)"
+            else: # short
+                low_since_entry = high_since_entry
+                max_profit_pct = (entry_price / low_since_entry) - 1 if low_since_entry else 0
+                if max_profit_pct >= profit_lock_pct:
+                    is_profit_locked = True
+                    lock_exit_price = entry_price * (1 - (max_profit_pct * profit_lock_retain_pct))
+                    if current_price >= lock_exit_price:
+                        return True, f"short profit lock hit: peak {max_profit_pct*100:.2f}% (locked {max_profit_pct*profit_lock_retain_pct*100:.2f}%)"
 
         # --- Dynamic ATR-Based Exits ---
         last_atr = 0.0

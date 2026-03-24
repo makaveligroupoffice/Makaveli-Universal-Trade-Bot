@@ -41,6 +41,16 @@ class PerformanceAnalyzer:
         win_rate = win_count / len(trades)
         profit_factor = (win_count * avg_win) / (loss_count * avg_loss) if (loss_count * avg_loss) > 0 else 999
         
+        # Calculate Sharpe Ratio (simplified)
+        returns = [t.get("pnl", 0) / Config.MAX_POSITION_VALUE_DOLLARS for t in trades]
+        import numpy as np
+        if len(returns) > 1:
+            mean_return = np.mean(returns)
+            std_return = np.std(returns)
+            sharpe_ratio = (mean_return / std_return) * np.sqrt(252) if std_return > 0 else 0
+        else:
+            sharpe_ratio = 0
+
         # Calculate Drawdown (simplified)
         equity_curve = [0]
         current_eq = 0
@@ -60,6 +70,7 @@ class PerformanceAnalyzer:
             "total_pnl": total_pnl,
             "total_trades": len(trades),
             "profit_factor": profit_factor,
+            "sharpe_ratio": sharpe_ratio,
             "max_drawdown": max_dd,
             "avg_win": avg_win,
             "avg_loss": avg_loss,

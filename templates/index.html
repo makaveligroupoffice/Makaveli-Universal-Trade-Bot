@@ -45,8 +45,16 @@
                 <div id="accountEquity" class="text-lg font-bold text-white">$---</div>
             </div>
             <div class="cyber-panel p-3 rounded text-center">
-                <div class="text-gray-500 uppercase text-[10px]">Trades</div>
+                <div class="text-gray-500 uppercase text-[10px]">Trades (Day)</div>
                 <div id="tradeCount" class="text-lg font-bold text-white">0</div>
+            </div>
+            <div class="cyber-panel p-2 rounded text-center bg-gray-900 bg-opacity-30">
+                <div class="text-gray-500 uppercase text-[9px]">Sharpe</div>
+                <div id="sharpeRatio" class="text-md font-bold text-white">---</div>
+            </div>
+            <div class="cyber-panel p-2 rounded text-center bg-gray-900 bg-opacity-30">
+                <div class="text-gray-500 uppercase text-[9px]">Profit Factor</div>
+                <div id="profitFactor" class="text-md font-bold text-white">---</div>
             </div>
         </div>
 
@@ -55,6 +63,17 @@
             <h2 class="text-xs uppercase text-gray-500 mb-2 border-b border-gray-800 pb-1">Open Positions</h2>
             <div id="positionList" class="space-y-2 text-xs">
                 <p class="italic text-gray-600">No active positions.</p>
+            </div>
+        </div>
+
+        <!-- Audit Trail -->
+        <div class="cyber-panel p-4 rounded-lg mb-6 bg-gray-900 bg-opacity-20">
+            <h2 class="text-xs uppercase text-gray-500 mb-2 border-b border-gray-800 pb-1 flex justify-between">
+                <span>Audit Trail</span>
+                <span onclick="updateAuditTrail()" class="cursor-pointer hover:text-green-400">REFRESH</span>
+            </h2>
+            <div id="auditTrail" class="space-y-1 text-[9px] font-mono h-32 overflow-y-auto">
+                <p class="italic text-gray-700">> Waiting for data...</p>
             </div>
         </div>
 
@@ -94,6 +113,7 @@
 
         <!-- AI & Strategy Learning -->
         <div class="mt-6 grid grid-cols-1 gap-4 mb-2">
+            <button onclick="investCrypto()" class="cyber-panel bg-orange-900 bg-opacity-20 hover:bg-opacity-40 border-orange-500 p-3 rounded uppercase font-bold text-xs transition-all text-orange-400">Scan & Invest Crypto (Long-Term)</button>
             <button onclick="deepReadingSession()" class="cyber-panel bg-yellow-900 bg-opacity-20 hover:bg-opacity-40 border-yellow-500 p-3 rounded uppercase font-bold text-xs transition-all text-yellow-400">Deep Reading Session (25+ Books)</button>
             <button onclick="learnFromYoutube()" class="cyber-panel bg-blue-900 bg-opacity-20 hover:bg-opacity-40 border-blue-500 p-3 rounded uppercase font-bold text-xs transition-all text-blue-400">Feed YouTube Strategy</button>
             <button onclick="rotateToken()" class="cyber-panel bg-purple-900 bg-opacity-20 hover:bg-opacity-40 border-purple-500 p-3 rounded uppercase font-bold text-xs transition-all text-purple-400">Rotate Auth Token</button>

@@ -3,7 +3,7 @@ from __future__ import annotations
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce, PositionSide, PositionIntent, OrderType, OrderClass
-from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, LimitOrderRequest, OrderRequest, OptionLegRequest, TakeProfitRequest, StopLossRequest
+from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest, LimitOrderRequest, OrderRequest, OptionLegRequest, TakeProfitRequest, StopLossRequest, StopOrderRequest, StopLimitOrderRequest
 
 from config import Config
 from broker_base import BrokerBase
@@ -17,7 +17,7 @@ class AlpacaBroker(BrokerBase):
             paper=paper if paper is not None else Config.ALPACA_PAPER,
         )
 
-    def buy(self, symbol: str, qty: float, limit_price: float | None = None, stop_loss_price: float | None = None, take_profit_price: float | None = None, trailing_stop_pct: float | None = None, extended_hours: bool = False):
+    def buy(self, symbol: str, qty: float, limit_price: float | None = None, stop_price: float | None = None, stop_limit_price: float | None = None, stop_loss_price: float | None = None, take_profit_price: float | None = None, trailing_stop_pct: float | None = None, extended_hours: bool = False):
         is_crypto = "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"])
         tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
         
@@ -34,8 +34,33 @@ class AlpacaBroker(BrokerBase):
             sl_req = StopLossRequest(stop_price=round(stop_loss_price, 2))
             order_class = OrderClass.BRACKET if tp_req else OrderClass.OTO
             
-        # For stocks, we prioritize hard stop loss orders as per user request
-        if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
+        # Determine order request type
+        if stop_limit_price and stop_price:
+            order = StopLimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.BUY,
+                time_in_force=tif,
+                limit_price=round(stop_limit_price, 2) if not is_crypto else stop_limit_price,
+                stop_price=round(stop_price, 2) if not is_crypto else stop_price,
+                extended_hours=extended_hours if not is_crypto else False,
+                order_class=order_class,
+                take_profit=tp_req,
+                stop_loss=sl_req
+            )
+        elif stop_price:
+            order = StopOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.BUY,
+                time_in_force=tif,
+                stop_price=round(stop_price, 2) if not is_crypto else stop_price,
+                extended_hours=extended_hours if not is_crypto else False,
+                order_class=order_class,
+                take_profit=tp_req,
+                stop_loss=sl_req
+            )
+        elif limit_price:
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
@@ -59,11 +84,30 @@ class AlpacaBroker(BrokerBase):
             )
         return self.client.submit_order(order_data=order)
 
-    def sell(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):
+    def sell(self, symbol: str, qty: float, limit_price: float | None = None, stop_price: float | None = None, stop_limit_price: float | None = None, extended_hours: bool = False):
         is_crypto = "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"])
         tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
         
-        if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
+        if stop_limit_price and stop_price:
+            order = StopLimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                time_in_force=tif,
+                limit_price=round(stop_limit_price, 2) if not is_crypto else stop_limit_price,
+                stop_price=round(stop_price, 2) if not is_crypto else stop_price,
+                extended_hours=extended_hours if not is_crypto else False
+            )
+        elif stop_price:
+            order = StopOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                time_in_force=tif,
+                stop_price=round(stop_price, 2) if not is_crypto else stop_price,
+                extended_hours=extended_hours if not is_crypto else False
+            )
+        elif limit_price:
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
@@ -81,7 +125,7 @@ class AlpacaBroker(BrokerBase):
             )
         return self.client.submit_order(order_data=order)
 
-    def short(self, symbol: str, qty: float, limit_price: float | None = None, stop_loss_price: float | None = None, take_profit_price: float | None = None, extended_hours: bool = False):
+    def short(self, symbol: str, qty: float, limit_price: float | None = None, stop_price: float | None = None, stop_limit_price: float | None = None, stop_loss_price: float | None = None, take_profit_price: float | None = None, extended_hours: bool = False):
         tif = TimeInForce.DAY
         
         # Determine order class
@@ -97,7 +141,32 @@ class AlpacaBroker(BrokerBase):
             sl_req = StopLossRequest(stop_price=round(stop_loss_price, 2))
             order_class = OrderClass.BRACKET if tp_req else OrderClass.OTO
 
-        if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
+        if stop_limit_price and stop_price:
+            order = StopLimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                time_in_force=tif,
+                limit_price=round(stop_limit_price, 2),
+                stop_price=round(stop_price, 2),
+                extended_hours=extended_hours,
+                order_class=order_class,
+                take_profit=tp_req,
+                stop_loss=sl_req
+            )
+        elif stop_price:
+            order = StopOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                time_in_force=tif,
+                stop_price=round(stop_price, 2),
+                extended_hours=extended_hours,
+                order_class=order_class,
+                take_profit=tp_req,
+                stop_loss=sl_req
+            )
+        elif limit_price:
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
@@ -121,8 +190,27 @@ class AlpacaBroker(BrokerBase):
             )
         return self.client.submit_order(order_data=order)
 
-    def cover(self, symbol: str, qty: float, limit_price: float | None = None, extended_hours: bool = False):
-        if limit_price and (Config.USE_LIMIT_ORDERS or extended_hours):
+    def cover(self, symbol: str, qty: float, limit_price: float | None = None, stop_price: float | None = None, stop_limit_price: float | None = None, extended_hours: bool = False):
+        if stop_limit_price and stop_price:
+            order = StopLimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.BUY,
+                time_in_force=TimeInForce.DAY,
+                limit_price=round(stop_limit_price, 2),
+                stop_price=round(stop_price, 2),
+                extended_hours=extended_hours
+            )
+        elif stop_price:
+            order = StopOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.BUY,
+                time_in_force=TimeInForce.DAY,
+                stop_price=round(stop_price, 2),
+                extended_hours=extended_hours
+            )
+        elif limit_price:
             order = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
