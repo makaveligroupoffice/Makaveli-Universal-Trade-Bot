@@ -21,8 +21,6 @@ class Strategy:
         df = pd.DataFrame([{"open": float(b.open), "close": float(b.close), "high": float(b.high), "low": float(b.low), "volume": float(b.volume)} for b in bars])
         
         # --- Multi-Timeframe Logic (Internal Emulation) ---
-        # If we have 200 bars of 1m, the last 60 bars represent 1 hour.
-        # We can calculate an 'Hourly' trend within the 1m data.
         df['sma_hourly'] = df['close'].rolling(window=60).mean()
         
         # --- Trend Indicators ---
@@ -34,88 +32,42 @@ class Strategy:
         df['ema26'] = df['close'].ewm(span=26, adjust=False).mean()
         
         # --- Momentum Indicators ---
-        # RSI
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         df['rsi14'] = 100 - (100 / (1 + rs))
         
-        # MACD
         df['macd'] = df['ema12'] - df['ema26']
         df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
         df['macd_hist'] = df['macd'] - df['macd_signal']
         
         # --- Volatility Indicators ---
-        # Bollinger Bands
         df['bb_mid'] = df['close'].rolling(window=20).mean()
         df['bb_std'] = df['close'].rolling(window=20).std()
         df['bb_upper'] = df['bb_mid'] + (df['bb_std'] * 2)
         df['bb_lower'] = df['bb_mid'] - (df['bb_std'] * 2)
         
-        # Keltner Channels
         df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
         df['tr'] = df.apply(lambda r: max(r['high'] - r['low'], abs(r['high'] - r['close']), abs(r['low'] - r['close'])), axis=1)
         df['atr20'] = df['tr'].rolling(window=20).mean()
         df['kc_upper'] = df['ema20'] + (df['atr20'] * 2)
         df['kc_lower'] = df['ema20'] - (df['atr20'] * 2)
 
-        # ATR (standard 14 for other uses)
         df['atr14'] = df['tr'].rolling(window=14).mean()
         
         # --- Stochastic Slow ---
         low14 = df['low'].rolling(window=14).min()
         high14 = df['high'].rolling(window=14).max()
         df['stoch_k'] = 100 * ((df['close'] - low14) / (high14 - low14))
-        df['stoch_d'] = df['stoch_k'].rolling(window=3).mean() # Slow Stochastic
+        df['stoch_d'] = df['stoch_k'].rolling(window=3).mean() 
         
-        # --- Parabolic SAR (Simplified Loop) ---
-        psar = list(df['close'].iloc[:1]) * len(df)
-        bull = True
-        af = 0.02
-        ep = df['low'].iloc[0] if bull else df['high'].iloc[0]
-        
-        for i in range(1, len(df)):
-            prev_psar = psar[i-1]
-            if bull:
-                psar[i] = prev_psar + af * (ep - prev_psar)
-                if df['low'].iloc[i] < psar[i]:
-                    bull = False
-                    psar[i] = ep
-                    ep = df['low'].iloc[i]
-                    af = 0.02
-                else:
-                    if df['high'].iloc[i] > ep:
-                        ep = df['high'].iloc[i]
-                        af = min(af + 0.02, 0.2)
-                    # PSAR cannot be above the previous two lows
-                    psar[i] = min(psar[i], df['low'].iloc[i-1], df['low'].iloc[max(0, i-2)])
-            else:
-                psar[i] = prev_psar + af * (ep - prev_psar)
-                if df['high'].iloc[i] > psar[i]:
-                    bull = True
-                    psar[i] = ep
-                    ep = df['high'].iloc[i]
-                    af = 0.02
-                else:
-                    if df['low'].iloc[i] < ep:
-                        ep = df['low'].iloc[i]
-                        af = min(af + 0.02, 0.2)
-                    # PSAR cannot be below the previous two highs
-                    psar[i] = max(psar[i], df['high'].iloc[i-1], df['high'].iloc[max(0, i-2)])
-        df['psar'] = psar
-        df['psar_bull'] = (df['close'] > df['psar'])
-        
-        # --- Momentum ---
-        df['momentum'] = df['close'] - df['close'].shift(10)
-
         # --- ADX ---
         df['up_move'] = df['high'].diff()
         df['down_move'] = df['low'].diff().abs()
         df['plus_dm'] = df.apply(lambda r: r['up_move'] if r['up_move'] > r['down_move'] and r['up_move'] > 0 else 0, axis=1)
         df['minus_dm'] = df.apply(lambda r: r['down_move'] if r['down_move'] > r['up_move'] and r['down_move'] > 0 else 0, axis=1)
         
-        # TV uses RMA (Running Moving Average) for ADX/ATR, which is ewm(alpha=1/14)
         alpha = 1/14
         df['plus_di'] = 100 * (df['plus_dm'].ewm(alpha=alpha, adjust=False).mean() / df['atr14'])
         df['minus_di'] = 100 * (df['minus_dm'].ewm(alpha=alpha, adjust=False).mean() / df['atr14'])
@@ -133,26 +85,6 @@ class Strategy:
         df['rvol'] = df['volume'] / df['avg_volume20']
         df['volume_spike'] = df['volume'] > (df['avg_volume20'] * 3.0)
 
-        # --- Liquidity Zones & Order Blocks (Simplified Detection) ---
-        # Order Block: Large candle preceding a strong move, where price consolidates later
-        df['body_size'] = (df['close'] - df['open']).abs()
-        df['is_bullish_ob'] = (df['close'] < df['open']) & (df['volume'] > df['avg_volume20'] * 1.5) & (df['close'].shift(-1) > df['high'])
-        df['is_bearish_ob'] = (df['close'] > df['open']) & (df['volume'] > df['avg_volume20'] * 1.5) & (df['close'].shift(-1) < df['low'])
-
-        # Fair Value Gap (FVG)
-        df['fvg_bull'] = (df['low'] > df['high'].shift(2))
-        df['fvg_bear'] = (df['high'] < df['low'].shift(2))
-
-        # Break of Structure (BOS)
-        df['hh'] = (df['high'] > df['high'].shift(1).rolling(10).max())
-        df['ll'] = (df['low'] < df['low'].shift(1).rolling(10).min())
-        df['bos_bull'] = df['hh'] & (df['close'] > df['high'].shift(1))
-        df['bos_bear'] = df['ll'] & (df['close'] < df['low'].shift(1))
-
-        # Liquidity Sweep
-        df['sweep_low'] = (df['low'] < df['low'].rolling(20).min().shift(1)) & (df['close'] > df['low'].rolling(20).min().shift(1))
-        df['sweep_high'] = (df['high'] > df['high'].rolling(20).max().shift(1)) & (df['close'] < df['high'].rolling(20).max().shift(1))
-
         # --- Supertrend ---
         multiplier = 3.0
         atr_period = 10
@@ -167,19 +99,16 @@ class Strategy:
         final_lower_band = [0.0] * len(df)
         
         for i in range(1, len(df)):
-            # Final Upper Band
             if df['upper_band'].iloc[i] < final_upper_band[i-1] or df['close'].iloc[i-1] > final_upper_band[i-1]:
                 final_upper_band[i] = df['upper_band'].iloc[i]
             else:
                 final_upper_band[i] = final_upper_band[i-1]
             
-            # Final Lower Band
             if df['lower_band'].iloc[i] > final_lower_band[i-1] or df['close'].iloc[i-1] < final_lower_band[i-1]:
                 final_lower_band[i] = df['lower_band'].iloc[i]
             else:
                 final_lower_band[i] = final_lower_band[i-1]
             
-            # Supertrend
             if supertrend[i-1] == final_upper_band[i-1]:
                 if df['close'].iloc[i] > final_upper_band[i]:
                     supertrend[i] = final_lower_band[i]
@@ -195,15 +124,12 @@ class Strategy:
         df['supertrend_bull'] = (df['close'] > df['supertrend'])
 
         # --- Technical Ratings & Momentum Scoring ---
-        # Momentum Scoring System (0-100)
         df['mom_rsi'] = df['rsi14'] / 100.0
         df['mom_macd'] = (df['macd_hist'] - df['macd_hist'].rolling(50).min()) / (df['macd_hist'].rolling(50).max() - df['macd_hist'].rolling(50).min())
         df['mom_adx'] = df['adx'] / 100.0
         df['momentum_score'] = (df['mom_rsi'] + df['mom_macd'] + df['mom_adx']) / 3.0 * 100.0
 
-        # Technical Ratings (Simplified)
-        # Combine signals from RSI, MACD, Stoch, and MAs
-        # Buy = 1, Neutral = 0, Sell = -1
+        # Technical Ratings
         df['tr_rsi'] = df['rsi14'].apply(lambda x: 1 if x < 30 else (-1 if x > 70 else 0))
         df['tr_macd'] = df['macd_hist'].apply(lambda x: 1 if x > 0 else -1)
         df['tr_stoch'] = df['stoch_k'].apply(lambda x: 1 if x < 20 else (-1 if x > 80 else 0))
@@ -216,64 +142,16 @@ class Strategy:
         # --- Chart Patterns ---
         df = ChartPatterns.detect_all(df)
 
-        # --- Auto Trend Detector ---
-        # Find local peaks/troughs (support/resistance)
-        df['support'] = df['low'].rolling(window=20).min()
-        df['resistance'] = df['high'].rolling(window=20).max()
-        df['near_support'] = df['close'] < (df['support'] * 1.01)
-        df['near_resistance'] = df['close'] > (df['resistance'] * 0.99)
-
         # --- Market Regime Intelligence ---
-        # Trend vs Chop detector (ADX, volatility compression)
         df['is_chop'] = df['adx'] < Config.CHOP_ADX_THRESHOLD
         df['vol_compression'] = df['bb_std'].rolling(20).min() / df['bb_std'].rolling(20).max() < 0.5
-
-        # Liquidity condition detection (thin vs heavy markets)
         df['avg_volume50'] = df['volume'].rolling(50).mean()
         df['is_thin_market'] = df['volume'] < (df['avg_volume50'] * 0.5)
-        
-        # --- Liquidity & Order Flow Simulation ---
-        # Volume Delta Approximation (Buying vs Selling Pressure)
-        # We approximate delta by looking at where the close is relative to the candle range
-        df['candle_range'] = df['high'] - df['low']
-        df['close_pos'] = (df['close'] - df['low']) / df['candle_range'].replace(0, 1e-9)
-        df['vol_delta'] = df['volume'] * (2 * df['close_pos'] - 1)
-        df['vol_delta_ema'] = df['vol_delta'].ewm(span=Config.VOLUME_DELTA_EMA_PERIOD).mean()
-        df['momentum_imbalance'] = df['vol_delta_ema'] / df['avg_volume20']
-        
-        # Liquidity Pool Mapping (Equal Highs/Lows)
-        lookback = Config.LIQUIDITY_POOL_LOOKBACK
-        df['eqh'] = (df['high'].rolling(lookback).max() == df['high']).rolling(5).sum() > 0
-        df['eql'] = (df['low'].rolling(lookback).min() == df['low']).rolling(5).sum() > 0
-        
-        # --- Smart Money Concepts (SMC) ---
-        # Order Imbalance detection
-        df['imbalance_bull'] = (df['low'] > df['high'].shift(2)) & (df['close'] > df['open'])
-        df['imbalance_bear'] = (df['high'] < df['low'].shift(2)) & (df['close'] < df['open'])
-
-        # Fake Breakout filter
-        df['fake_breakout_bull'] = (df['high'] > df['resistance'].shift(1)) & (df['close'] < df['resistance'].shift(1))
-        df['fake_breakout_bear'] = (df['low'] < df['support'].shift(1)) & (df['close'] > df['support'].shift(1))
-        
-        # --- News Spike Detector ---
-        # Detect sudden volatility or volume spikes that suggest a news event
-        df['atr_avg'] = df['atr14'].rolling(window=20).mean()
-        df['news_spike_volatility'] = (df['tr'] > (df['atr_avg'] * Config.NEWS_SPIKE_ATR_THRESHOLD))
-        df['news_spike_volume'] = (df['rvol'] > Config.NEWS_SPIKE_VOLUME_THRESHOLD)
-        df['news_spike'] = df['news_spike_volatility'] | df['news_spike_volume']
-        
-        # Mark as unsafe if there was a spike in the last X bars
-        df['recent_news_spike'] = df['news_spike'].rolling(window=Config.NEWS_FILTER_LOOKBACK).max() > 0
 
         return df
 
     @staticmethod
     def should_buy(bars, dynamic_config: dict | None = None, active_strategies: list | None = None, symbol: str = "") -> tuple[bool, str, float, dict]:
-        """
-        Returns (should_buy, reason, signal_strength, indicators)
-        Uses confluence of multiple strategy families to ensure high-probability entries.
-        Target: 75%+ Win Ratio
-        """
         df = Strategy._calculate_indicators(bars)
         if df is None:
             return False, "not enough bars", 0.0, {}
@@ -287,9 +165,7 @@ class Strategy:
         matches = []
         strength_score = 0.0
         
-        # --- EDGE STACKING ENGINE (Score-based) ---
         from intelligence import ConfidenceEngine
-        # We need a risk manager instance for confidence scores
         from risk import RiskManager
         rm = RiskManager()
         scores = ConfidenceEngine.calculate_scores(bars, "CONFLUENCE", rm)
@@ -298,28 +174,22 @@ class Strategy:
         if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
             return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
 
-        # --- News Filter Check ---
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
 
-        # Base filters
-        volatility_excessive = last['atr14'] > (last['close'] * 0.03) 
+        volatility_excessive = last['atr14'] > (last['close'] * 0.02)  # Reduced threshold for volatility
         last_candle_green = last['close'] > prev['close']
         
-        # Determine if we are in After-Hours for stricter filtering
         from datetime import datetime
         now_hhmm = int(datetime.now().strftime("%H%M"))
         is_after_hours = now_hhmm > 1600 or now_hhmm < 930
 
-        # Stricter Relative Position for AH (Top 15% instead of 20%)
         min_close_relative = 0.85 if is_after_hours else 0.8
         close_relative_pos = (last['close'] - last['low']) / (last['high'] - last['low']) if (last['high'] - last['low']) > 0 else 0
         
-        # Stricter RVOL for AH (3.0 instead of 1.8)
         min_rvol_base = 3.0 if is_after_hours else 1.8
         volume_spike = last['rvol'] > (dynamic_config.get("min_rvol", min_rvol_base) if dynamic_config else min_rvol_base)
 
-        # 0. FAMILY: LIQUIDITY & SMC
         smc_match = False
         if "LIQUIDITY" in active:
             if last['sweep_low'] and last_candle_green:
@@ -335,7 +205,6 @@ class Strategy:
                 strength_score += 0.3
                 smc_match = True
 
-        # 1. FAMILY: TREND
         trend_match = False
         long_term_bullish = last['close'] > last['sma200']
         hourly_trend_bullish = last['close'] > last['sma_hourly'] if not pd.isna(last['sma_hourly']) else True
@@ -343,7 +212,6 @@ class Strategy:
         if 'sma50' in last and not pd.isna(last['sma50']):
             sniper_stack = sniper_stack and last['sma20'] > last['sma50']
         
-        # VWAP Filter
         vwap_filter = last['close'] > last['vwap'] if 'vwap' in last else True
 
         if "TREND" in active:
@@ -352,9 +220,7 @@ class Strategy:
                 strength_score += 0.5
                 trend_match = True
 
-        # --- RE-ENTRY INTELLIGENCE (Pullback entry) ---
         if Config.ENABLE_REENTRY_LOGIC and not trend_match and "TREND" in active:
-            # If we missed the breakout, check for a pullback to SMA10 or SMA20
             near_ema = (abs(last['close'] - last['sma10']) / last['close'] < (Config.REENTRY_PULLBACK_PCT / 100.0))
             if long_term_bullish and sniper_stack and near_ema and last_candle_green:
                 matches.append("TREND_REENTRY_PULLBACK")
@@ -367,10 +233,9 @@ class Strategy:
                 strength_score += 0.4
                 trend_match = True
 
-        # 2. FAMILY: MOMENTUM / REVERSION
         mom_match = False
         if "RSI" in active:
-            if last['rsi14'] < 30 and last_candle_green:
+            if last['rsi14'] < 35 and last_candle_green:  # Adjusted RSI threshold for oversold
                 matches.append("RSI_OVERSOLD")
                 strength_score += 0.4
                 mom_match = True
@@ -399,7 +264,6 @@ class Strategy:
                 strength_score += 0.2
                 mom_match = True
 
-        # 3. FAMILY: PRICE ACTION / PATTERNS
         pa_match = False
         if "INSIDE_BAR" in active and len(df) >= 3:
              p1 = df.iloc[-2]; p2 = df.iloc[-3]
@@ -430,19 +294,15 @@ class Strategy:
                 strength_score += 0.5
                 pa_match = True
 
-        # 4. FAMILY: SCALPING (1-minute aggressive)
         scalp_match = False
         if "SCALPING" in active:
-             # Fast EMAs (9/21) cross
              ema_cross = last['sma10'] > last['sma20'] and prev['sma10'] <= prev['sma20']
-             # Volatility requirement
-             vol_ok = last['atr14'] > (last['close'] * 0.001) # Minimum movement
+             vol_ok = last['atr14'] > (last['close'] * 0.001) 
              if ema_cross and vol_ok and last['rvol'] > 1.5:
                  matches.append("SCALP_CROSS")
                  strength_score += 0.4
                  scalp_match = True
 
-        # 5. FAMILY: BREAKOUT / VOLUME
         break_match = False
         if "BREAKOUT" in active:
             highest_20 = df['high'].rolling(20).max().iloc[-2]
@@ -451,59 +311,41 @@ class Strategy:
                 strength_score += 0.5
                 break_match = True
 
-        # --- CONFLUENCE LOGIC ---
-        # We need at least 2 families or 1 very strong signal (Sniper)
         num_families = sum([trend_match, mom_match, pa_match, break_match, scalp_match])
         
-        # Final Decision
         final_strength = min(1.0, strength_score)
         
-        # --- High Probability Filters ---
-        # 1. ADX Trend Strength: Ensure a trend exists for trend-based entries
         is_trending = last['adx'] > Config.MIN_ADX_TREND
-        
-        # 2. RSI Extreme: Avoid buying at the absolute peak
         rsi_safe = last['rsi14'] < 70
 
-        # Increase requirement to 3 families or 2 families + high strength
-        # AND require ADX for TREND_SNIPER
         meets_base_confluence = (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe)
         
         if not meets_base_confluence:
-            # Fallback to Sniper or Aggressive
             if "TREND_SNIPER" in matches and last['rvol'] > 3.5 and is_trending:
-                 pass # Allow to continue to Quality Score
+                 pass 
             elif "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_green and rsi_safe:
-                 pass # Allow to continue
+                 pass 
             else:
                  return False, "insufficient confluence or signal strength", 0.0, last_indicators
 
         if "TREND_SNIPER" in matches and not is_trending:
                 return False, f"TREND_SNIPER rejected: weak trend (ADX: {last['adx']:.1f})", 0.0, last_indicators
 
-        # --- Trade Quality Filter (0-100 Scoring) ---
-        # Scoring based on: Trend alignment, Volume confirmation, Volatility, Risk/Reward
         quality_score = 0.0
-        # 1. Trend Alignment (30 pts)
         if last['close'] > last['sma200']: quality_score += 15
         if last['close'] > last['sma_hourly']: quality_score += 15
         
-        # 2. Volume Confirmation (30 pts)
         if last['rvol'] > 2.0: quality_score += 15
         if last['rvol'] > 3.5: quality_score += 15
         
-        # 3. Volatility / Market Regime (20 pts)
         if not last['is_chop']: quality_score += 10
         if not last['is_thin_market']: quality_score += 10
         
-        # 4. Confluence Strength (20 pts)
         quality_score += (num_families / 5.0) * 20.0
         
-        # SMC / Trap Detection Bonus/Penalty
-        if last['sweep_low']: quality_score += 10 # Liquidity sweep is good for entry
-        if last['fake_breakout_bull']: quality_score -= 20 # Avoid bull traps
+        if last['sweep_low']: quality_score += 10 
+        if last['fake_breakout_bull']: quality_score -= 20 
         
-        # --- MARKET DNA & CONFIDENCE ENGINE ---
         from intelligence import MarketDNA, ConfidenceEngine
         dna_profile = MarketDNA.get_asset_profile(symbol)
         if dna_profile == "MACRO_TREND" and is_trending:
@@ -514,7 +356,6 @@ class Strategy:
         scores = ConfidenceEngine.calculate_scores(bars, matches[0] if matches else "unknown", None)
         trade_confidence = scores.get("trade", 0)
         
-        # Combine quality and confidence
         final_score = (quality_score + trade_confidence) / 2
         last_indicators['trade_quality_score'] = round(final_score, 2)
         last_indicators['market_confidence'] = scores.get("market", 0)
@@ -525,33 +366,16 @@ class Strategy:
 
         return True, f"CONFLUENCE ({'+'.join(matches)})", final_strength, last_indicators
         
-        # Stricter Sniper: Requires trend match + higher RVOL + ADX trend
-        if "TREND_SNIPER" in matches and last['rvol'] > 3.5 and is_trending:
-            return True, "SNIPER: ultra-high-conviction trend stack + volume", 1.0, last_indicators
-
-        if "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_green and rsi_safe:
-             return True, f"AGGRESSIVE: {matches[0] if matches else 'MOMENTUM'}", final_strength, last_indicators
-
-        return False, "insufficient confluence or signal strength", 0.0, last_indicators
-
     @staticmethod
     def is_news_safe(symbol: str, market_data_client, news_list: list | None = None, bars=None) -> bool:
-        """
-        Avoid trading if there's high-impact news or too many recent news items (excessive volatility).
-        Also checks for recent technical news spikes (ATR/Volume spikes).
-        Blocks trading during major economic releases (CPI, FOMC).
-        Integrates with Forex Factory, Trading Economics, and Investing.com logic.
-        """
         if Config.ENABLE_NEWS_FILTER is False:
             return True
 
-        # 0. Economic Calendar / Major Releases Check via NewsEngine
         from news_engine import NewsEngine
         safe, reason = NewsEngine.is_market_safe(symbol, market_data_client)
         if not safe:
             return False
 
-        # 1. Technical Spike Check (ATR/Volume)
         if bars is not None:
             df = Strategy._calculate_indicators(bars)
             if df is not None and not df.empty:
@@ -559,16 +383,13 @@ class Strategy:
                 if last.get('recent_news_spike', False):
                     return False
 
-        # 2. Headline News Check
         news = news_list if news_list is not None else (market_data_client.get_news(symbol, days=1) if market_data_client else [])
-        # Check for specific negative keywords in headlines
         negative_keywords = ["lawsuit", "investigation", "bankruptcy", "fraud", "hacked", "restatement", "default"]
         
         for item in news:
             if any(word in item.headline.lower() for word in negative_keywords):
                 return False
                 
-        # If news frequency is extremely high (>10 in 24h), it might be too volatile
         if len(news) > 10:
             return False
             
@@ -576,10 +397,6 @@ class Strategy:
 
     @staticmethod
     def should_short(bars, dynamic_config: dict | None = None, active_strategies: list | None = None, symbol: str = "") -> tuple[bool, str, float, dict]:
-        """
-        Returns (should_short, reason, signal_strength, indicators)
-        Uses confluence for high-probability short entries.
-        """
         df = Strategy._calculate_indicators(bars)
         if df is None:
             return False, "not enough bars", 0.0, {}
@@ -593,7 +410,6 @@ class Strategy:
         matches = []
         strength_score = 0.0
         
-        # --- EDGE STACKING ENGINE (Score-based) ---
         from intelligence import ConfidenceEngine
         from risk import RiskManager
         rm = RiskManager()
@@ -603,28 +419,22 @@ class Strategy:
         if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
             return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
 
-        # --- News Filter Check ---
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
 
-        # Base filters
-        volatility_excessive = last['atr14'] > (last['close'] * 0.03)
+        volatility_excessive = last['atr14'] > (last['close'] * 0.02)  # Reduced threshold for volatility
         last_candle_red = last['close'] < prev['close']
         
-        # Determine if we are in After-Hours for stricter filtering
         from datetime import datetime
         now_hhmm = int(datetime.now().strftime("%H%M"))
         is_after_hours = now_hhmm > 1600 or now_hhmm < 930
         
-        # Stricter Relative Position for AH (Bottom 15% instead of 20%)
         min_close_relative = 0.85 if is_after_hours else 0.8
         close_relative_pos = (last['high'] - last['close']) / (last['high'] - last['low']) if (last['high'] - last['low']) > 0 else 0
         
-        # Stricter RVOL for AH (3.0 instead of 1.8)
         min_rvol_base = 3.0 if is_after_hours else 1.8
         volume_spike = last['rvol'] > (dynamic_config.get("min_rvol", min_rvol_base) if dynamic_config else min_rvol_base)
 
-        # 0. FAMILY: LIQUIDITY & SMC
         smc_match = False
         if "LIQUIDITY" in active:
             if last['sweep_high'] and last_candle_red:
@@ -640,7 +450,6 @@ class Strategy:
                 strength_score += 0.3
                 smc_match = True
 
-        # 1. FAMILY: TREND
         trend_match = False
         long_term_bearish = last['close'] < last['sma200']
         hourly_trend_bearish = last['close'] < last['sma_hourly'] if not pd.isna(last['sma_hourly']) else True
@@ -648,7 +457,6 @@ class Strategy:
         if 'sma50' in last and not pd.isna(last['sma50']):
             sniper_bearish_stack = sniper_bearish_stack and last['sma20'] < last['sma50']
             
-        # VWAP Filter for Shorts
         vwap_filter_short = last['close'] < last['vwap'] if 'vwap' in last else True
 
         if "TREND" in active:
@@ -657,7 +465,6 @@ class Strategy:
                 strength_score += 0.5
                 trend_match = True
 
-        # --- SHORT RE-ENTRY INTELLIGENCE ---
         if Config.ENABLE_REENTRY_LOGIC and not trend_match and "TREND" in active:
             near_ema = (abs(last['close'] - last['sma10']) / last['close'] < (Config.REENTRY_PULLBACK_PCT / 100.0))
             if long_term_bearish and sniper_bearish_stack and near_ema and last_candle_red:
@@ -671,10 +478,9 @@ class Strategy:
                 strength_score += 0.4
                 trend_match = True
 
-        # 2. FAMILY: MOMENTUM / REVERSION
         mom_match = False
         if "RSI" in active:
-            if last['rsi14'] > 70 and last_candle_red:
+            if last['rsi14'] > 65 and last_candle_red:  # Adjusted RSI threshold for overbought
                 matches.append("RSI_OVERBOUGHT")
                 strength_score += 0.4
                 mom_match = True
@@ -697,7 +503,6 @@ class Strategy:
                 strength_score += 0.2
                 mom_match = True
 
-        # 3. FAMILY: PRICE ACTION / PATTERNS
         pa_match = False
         if "INSIDE_BAR" in active and len(df) >= 3:
              p1 = df.iloc[-2]; p2 = df.iloc[-3]
@@ -728,19 +533,15 @@ class Strategy:
                 strength_score += 0.5
                 pa_match = True
 
-        # 4. FAMILY: SCALPING (1-minute aggressive short)
         scalp_match = False
         if "SCALPING" in active:
-             # Fast EMAs (9/21) cross down
              ema_cross = last['sma10'] < last['sma20'] and prev['sma10'] >= prev['sma20']
-             # Volatility requirement
-             vol_ok = last['atr14'] > (last['close'] * 0.001) # Minimum movement
+             vol_ok = last['atr14'] > (last['close'] * 0.001) 
              if ema_cross and vol_ok and last['rvol'] > 1.5:
                  matches.append("SCALP_SHORT_CROSS")
                  strength_score += 0.4
                  scalp_match = True
 
-        # 4. FAMILY: BREAKOUT / VOLUME
         break_match = False
         if "BREAKOUT" in active:
             lowest_20 = df['low'].rolling(20).min().iloc[-2]
@@ -749,23 +550,15 @@ class Strategy:
                 strength_score += 0.5
                 break_match = True
 
-        # --- CONFLUENCE LOGIC ---
         num_families = sum([trend_match, mom_match, pa_match, break_match, scalp_match])
-        # Final Decision
         final_strength = min(1.0, strength_score)
         
-        # --- High Probability Filters ---
-        # 1. ADX Trend Strength: Ensure a trend exists for trend-based shorting
         is_trending = last['adx'] > Config.MIN_ADX_TREND
-        
-        # 2. RSI Extreme: Avoid shorting at the absolute bottom
         rsi_safe = last['rsi14'] > 30
 
-        # Increase requirement to 3 families or 2 families + high strength
         meets_base_confluence = (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe)
         
         if not meets_base_confluence:
-            # Fallback to Sniper or Aggressive
             if "SNIPER_SHORT" in matches and last['rvol'] > 3.5 and is_trending:
                  pass 
             elif "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_red and rsi_safe:
@@ -776,25 +569,21 @@ class Strategy:
         if "SNIPER_SHORT" in matches and not is_trending:
                 return False, f"SNIPER_SHORT rejected: weak trend (ADX: {last['adx']:.1f})", 0.0, last_indicators
 
-        # --- Trade Quality Filter (Short) ---
         quality_score = 0.0
-        # 1. Trend Alignment
         if last['close'] < last['sma200']: quality_score += 15
         if last['close'] < last['sma_hourly']: quality_score += 15
-        # 2. Volume
+        
         if last['rvol'] > 2.0: quality_score += 15
         if last['rvol'] > 3.5: quality_score += 15
-        # 3. Market Regime
+        
         if not last['is_chop']: quality_score += 10
         if not last['is_thin_market']: quality_score += 10
-        # 4. Confluence
+        
         quality_score += (num_families / 5.0) * 20.0
         
-        # SMC / Trap Detection
         if last['sweep_high']: quality_score += 10
-        if last['fake_breakout_bear']: quality_score -= 20 # Avoid bear traps
+        if last['fake_breakout_bear']: quality_score -= 20 
         
-        # --- MARKET DNA & CONFIDENCE ENGINE ---
         from intelligence import MarketDNA, ConfidenceEngine
         dna_profile = MarketDNA.get_asset_profile(symbol)
         if dna_profile == "MACRO_TREND" and is_trending:
@@ -805,7 +594,6 @@ class Strategy:
         scores = ConfidenceEngine.calculate_scores(bars, matches[0] if matches else "unknown", None)
         trade_confidence = scores.get("trade", 0)
         
-        # Combine quality and confidence
         final_score = (quality_score + trade_confidence) / 2
         last_indicators['trade_quality_score'] = round(final_score, 2)
         last_indicators['market_confidence'] = scores.get("market", 0)
@@ -815,55 +603,33 @@ class Strategy:
             return False, f"quality/confidence too low ({final_score:.1f} score, {trade_confidence:.1f} conf)", 0.0, last_indicators
 
         return True, f"CONFLUENCE SHORT ({'+'.join(matches)})", final_strength, last_indicators
-        
-        # Stricter Sniper Short: Requires trend match + higher RVOL + ADX trend
-        if "SNIPER_SHORT" in matches and last['rvol'] > 3.5 and is_trending:
-            return True, "SNIPER SHORT: ultra-high-conviction trend stack + volume", 1.0, last_indicators
-
-        if "AGGRESSIVE" in active and final_strength >= 0.6 and last_candle_red and rsi_safe:
-             return True, f"AGGRESSIVE SHORT: {matches[0] if matches else 'MOMENTUM'}", final_strength, last_indicators
-
-        return False, "insufficient confluence or signal strength", 0.0, last_indicators
 
     @staticmethod
     def should_sell(entry_price: float, current_price: float, bars, high_since_entry: float | None = None, side: str = "buy", dynamic_config: dict | None = None, is_manual: bool = False, entry_time: datetime | None = None) -> tuple[bool, str, float]:
-        """
-        Returns (should_exit, reason, exit_fraction)
-        exit_fraction: 1.0 = exit full, 0.5 = exit half, etc.
-        """
         if current_price <= 0:
             return False, "invalid current price", 1.0
 
-        # --- Time-Based Exit ---
         if entry_time and Config.TIME_BASED_EXIT_MINUTES > 0:
             elapsed = (datetime.now() - entry_time).total_seconds() / 60.0
             if elapsed >= Config.TIME_BASED_EXIT_MINUTES:
                 return True, f"time-based exit hit ({Config.TIME_BASED_EXIT_MINUTES} mins elapsed)", 1.0
 
-        # Use dynamic config if provided, else fallback to global config
         sl_pct = (dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if dynamic_config else Config.STOP_LOSS_PCT) / 100.0
         tp_pct = (dynamic_config.get("take_profit_pct", Config.TAKE_PROFIT_PCT) if dynamic_config else Config.TAKE_PROFIT_PCT) / 100.0
         ts_pct = Config.TRAILING_STOP_PCT / 100.0 
         ts_activation_pct = Config.TRAILING_STOP_ACTIVATION_PCT / 100.0
 
-        # --- Exit Ladder (Partial Take Profits) ---
         if Config.EXIT_LADDER_ENABLED and entry_price > 0:
             profit_pct = (current_price / entry_price - 1) if side == "buy" else (entry_price / current_price - 1)
-            # TP 1: at 0.5 * target TP -> exit 25%
-            # TP 2: at 0.75 * target TP -> exit 50%
-            # TP 3: at 1.0 * target TP -> exit 100% (or let run with trailing)
             if profit_pct >= tp_pct * 1.5:
                  return True, "TP 4 (EXTREME): full exit", 1.0
             elif profit_pct >= tp_pct:
                  return True, "TP 3 (FULL): target reached", 1.0
             elif profit_pct >= tp_pct * 0.75:
-                 # Signal to exit 50% (handled by bot_runner)
                  return True, "TP 2 (PARTIAL 50%): scaling out", 0.5
             elif profit_pct >= tp_pct * 0.5:
-                 # Signal to exit 25%
                  return True, "TP 1 (PARTIAL 25%): scaling out", 0.25
 
-        # --- Profit Lock System ---
         profit_lock_pct = Config.PROFIT_LOCK_PCT / 100.0
         profit_lock_retain_pct = Config.PROFIT_LOCK_RETAIN_PCT / 100.0
         is_profit_locked = False
@@ -872,12 +638,10 @@ class Strategy:
                 max_profit_pct = (high_since_entry / entry_price) - 1 if high_since_entry else 0
                 if max_profit_pct >= profit_lock_pct:
                     is_profit_locked = True
-                    # Exit if we drop below the locked percentage of PEAK profit
-                    # e.g. if we reached 2.5%, and retain 80%, we exit at 2.0%
                     lock_exit_price = entry_price * (1 + (max_profit_pct * profit_lock_retain_pct))
                     if current_price <= lock_exit_price:
                         return True, f"profit lock hit: peak {max_profit_pct*100:.2f}% (locked {max_profit_pct*profit_lock_retain_pct*100:.2f}%)"
-            else: # short
+            else:
                 low_since_entry = high_since_entry
                 max_profit_pct = (entry_price / low_since_entry) - 1 if low_since_entry else 0
                 if max_profit_pct >= profit_lock_pct:
@@ -886,7 +650,6 @@ class Strategy:
                     if current_price >= lock_exit_price:
                         return True, f"short profit lock hit: peak {max_profit_pct*100:.2f}% (locked {max_profit_pct*profit_lock_retain_pct*100:.2f}%)"
 
-        # --- Dynamic ATR-Based Exits ---
         last_atr = 0.0
         df_full = None
         if len(bars) >= 20:
@@ -895,35 +658,28 @@ class Strategy:
                 last_atr = df_full['atr14'].iloc[-1]
                 
         if Config.ENABLE_DYNAMIC_ATR_EXITS and last_atr > 0 and entry_price > 0:
-            # --- News Check during trade ---
-            # If news is unsafe, tighten stops significantly or exit
             if df_full is not None and not Strategy.is_news_safe("", None, bars=bars):
-                # Tighten SL to half of current ATR for quick protection
                 tight_sl_price = last_atr * 0.5
                 if side == "buy":
                     if current_price < (entry_price - tight_sl_price):
                         return True, "Unsafe news: Tight ATR stop hit (buy)", 1.0
-                else: # short
+                else:
                     if current_price > (entry_price + tight_sl_price):
                         return True, "Unsafe news: Tight ATR stop hit (short)", 1.0
 
-            # Override SL/TP with ATR multiples if more conservative
             atr_sl_price = last_atr * Config.ATR_SL_MULTIPLIER
             atr_tp_price = last_atr * Config.ATR_TP_MULTIPLIER
             
-            # ADAPTIVE TP: If momentum is high, extend TP
             if Config.ADAPTIVE_TP_ENABLED and df_full is not None:
                 if df_full['adx'].iloc[-1] > 35:
-                    atr_tp_price *= 1.5 # Let winners run in strong trends
+                    atr_tp_price *= 1.5 
 
             atr_sl_pct = atr_sl_price / entry_price
             atr_tp_pct = atr_tp_price / entry_price
             
-            # Use the tighter of the two (fixed pct vs ATR)
             sl_pct = min(sl_pct, atr_sl_pct)
             tp_pct = max(tp_pct, atr_tp_pct) 
 
-        # --- Break-Even Stop Logic ---
         be_profit_pct = Config.BREAK_EVEN_PROFIT_PCT / 100.0
         is_at_break_even = False
         if entry_price > 0:
@@ -931,13 +687,12 @@ class Strategy:
                 highest_pct = (high_since_entry / entry_price) - 1 if high_since_entry else 0
                 if highest_pct >= be_profit_pct:
                     is_at_break_even = True
-            else: # short
-                low_since_entry = high_since_entry # Reuse variable name
+            else:
+                low_since_entry = high_since_entry
                 lowest_pct = (entry_price / low_since_entry) - 1 if low_since_entry else 0
                 if lowest_pct >= be_profit_pct:
                     is_at_break_even = True
 
-        # --- Dynamic Strategy Switch: Scalp vs. Hold ---
         is_strong_trend = False
         if len(bars) >= 20:
             import pandas as pd
@@ -945,65 +700,51 @@ class Strategy:
             df['sma20'] = df['close'].rolling(window=20).mean()
             last_close = df['close'].iloc[-1]
             last_sma20 = df['sma20'].iloc[-1]
-            # Strong trend: Price is at least 1% above SMA20 (for longs) or below (for shorts)
             if side == "buy":
                 is_strong_trend = last_close > (last_sma20 * 1.01)
             else:
                 is_strong_trend = last_close < (last_sma20 * 0.99)
 
-        # If it's a strong trend, LOOSEN the trailing stop to allow for bigger moves
-        # Targeting 10x growth by letting winners run
         if is_strong_trend:
-             ts_pct = ts_pct * 1.5 # 1.5x room for strong runners (tightened from 2.0x)
+             ts_pct = ts_pct * 1.5 
 
         if side == "buy":
-            # Stop loss
             if entry_price > 0:
-                effective_sl_pct = 0.0020 if is_at_break_even else sl_pct # Use 0.20% buffer for BE to avoid noise
+                effective_sl_pct = 0.0020 if is_at_break_even else sl_pct
                 if current_price <= entry_price * (1 - effective_sl_pct):
                     reason = "break-even stop hit" if is_at_break_even else f"stop loss hit ({sl_pct*100:.2f}%)"
                     return True, reason
-            # Trailing stop - Only once in enough profit
             if ts_pct > 0 and high_since_entry and entry_price > 0:
                 is_activated = (current_price >= entry_price * (1 + ts_activation_pct)) or (high_since_entry >= entry_price * (1 + ts_activation_pct))
                 
-                # Dynamic Trailing Logic: Tighten if in high profit or momentum fades
                 if is_activated and Config.ADAPTIVE_TP_ENABLED:
                     if (current_price / entry_price) - 1 > (tp_pct * 0.8):
-                        ts_pct *= 0.5 # Tighten trailing stop when close to TP
-                
+                        ts_pct *= 0.5 
+
                 if is_activated and current_price <= high_since_entry * (1 - ts_pct):
                     return True, f"trailing stop hit (high: {high_since_entry:.2f})"
-            # Take profit - Only if not manual or if entry_price is set
             if not is_manual and tp_pct > 0 and current_price >= entry_price * (1 + tp_pct):
                 return True, f"take profit hit ({tp_pct*100:.2f}%)"
-        else: # side == "short"
-            # Stop loss (price went UP)
+        else:
             if entry_price > 0:
                 effective_sl_pct = 0.0020 if is_at_break_even else sl_pct
                 if current_price >= entry_price * (1 + effective_sl_pct):
                     reason = "short break-even stop hit" if is_at_break_even else f"short stop loss hit ({sl_pct*100:.2f}%)"
                     return True, reason
-            # Trailing stop (low since entry)
             low_since_entry = high_since_entry
             if ts_pct > 0 and low_since_entry and entry_price > 0:
                 is_activated = (current_price <= entry_price * (1 - ts_activation_pct)) or (low_since_entry <= entry_price * (1 - ts_activation_pct))
                 
-                # Dynamic Trailing Logic (Short)
                 if is_activated and Config.ADAPTIVE_TP_ENABLED:
                     if (entry_price / current_price) - 1 > (tp_pct * 0.8):
                         ts_pct *= 0.5
                 
                 if is_activated and current_price >= low_since_entry * (1 + ts_pct):
                     return True, f"short trailing stop hit (low: {low_since_entry:.2f})"
-            # Take profit (price went DOWN)
             if not is_manual and tp_pct > 0 and current_price <= entry_price * (1 - tp_pct):
-                return True, f"short take profit hit ({tp_pct*100:.2f}%)"
+                return True, f"short take profit hit ({tp_pct*100:.2f})"
 
-        # --- Momentum rollover (The "Scalp" exit) ---
-        # Skip this aggressive exit for manual trades or VERY strong "Hold" trends
         if not is_manual and not is_strong_trend:
-            # Check RSI extremes for early profit taking
             if len(bars) >= 20:
                 df_full = Strategy._calculate_indicators(bars)
                 if df_full is not None:
@@ -1013,8 +754,6 @@ class Strategy:
                     if side == "short" and last_rsi < 25:
                         return True, f"RSI Oversold ({last_rsi:.1f}): Reached bottom momentum floor"
 
-            # Expert Tuning: Tighten scalp profit floor to 0.15% for constant cash flow
-            # but require 4 bars of reversal instead of 3 to avoid getting stopped out by noise.
             min_scalp_profit = float(os.getenv("SCALP_PROFIT_FLOOR", "0.15")) / 100.0
             
             is_profitable = False
@@ -1038,12 +777,7 @@ class Strategy:
 
     @staticmethod
     def get_option_strategy_legs(underlying_symbol: str, strategy_name: str, chain, current_price: float) -> list[dict] | None:
-        """
-        Calculates legs for various option strategies based on the current option chain.
-        Supported: covered_call, cash_secured_put, long_call, long_put, bull_call_spread, bear_put_spread, straddle
-        """
         if strategy_name == "long_call":
-            # Simple ATM or slightly OTM call
             best_strike = None
             min_diff = float('inf')
             for strike in chain.strikes:
@@ -1056,7 +790,6 @@ class Strategy:
                 return [{"symbol": f"{underlying_symbol}", "strike": best_strike, "side": "buy", "type": "call"}]
 
         elif strategy_name == "long_put":
-            # Simple ATM or slightly OTM put
             best_strike = None
             min_diff = float('inf')
             for strike in chain.strikes:
