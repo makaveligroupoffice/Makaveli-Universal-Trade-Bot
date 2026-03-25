@@ -235,7 +235,7 @@ class Strategy:
 
         mom_match = False
         if "RSI" in active:
-            if last['rsi14'] < 30 and last_candle_green:  # Adjusted RSI threshold for oversold
+            if last['rsi14'] < 35 and last_candle_green:  # Adjusted RSI threshold for oversold
                 matches.append("RSI_OVERSOLD")
                 strength_score += 0.4
                 mom_match = True
