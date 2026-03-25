@@ -130,11 +130,11 @@ function triggerKillSwitch() {
 }
 
 function promptAuthorization() {
-    const token = prompt('Enter Authorization Token:');
+    const token = prompt('Enter SHARING ACTIVATION KEY:');
     if (!token) return;
     
     const log = document.getElementById('logFeed');
-    log.innerHTML += `> AUTHORIZING BOT...<br>`;
+    log.innerHTML += `> AUTHORIZING BOT SHARING...<br>`;
     fetch('/api/bot/authorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

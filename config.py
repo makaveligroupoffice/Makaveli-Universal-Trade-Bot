@@ -11,6 +11,7 @@ class Config:
     # Security
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "change_me")
     AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "admin-token-12345")
+    SHARING_ACTIVATION_KEY: str = os.getenv("SHARING_ACTIVATION_KEY", "MAKA-VALI-PRIME-2026") # The hardcoded master key for SHARING authorization
     LICENSE_URL: str = os.getenv("LICENSE_URL", "https://raw.githubusercontent.com/makaveligroupoffice/license_server/main/status.json")
     LICENSE_ID: str = os.getenv("LICENSE_ID", "trial_user_001")
     LICENSE_CHECK_INTERVAL_SECONDS: int = int(os.getenv("LICENSE_CHECK_INTERVAL_SECONDS", "3600"))

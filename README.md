@@ -106,11 +106,12 @@ pip install -r requirements.txt
 ```
 
 ### 3. Configuration
-1. **Security Setup (Master Token)**: Run the following to generate your `logs/auth.env` file. This token is required for all management operations.
+1. **Security Setup (Master Token)**: Run the following to generate your `logs/auth.env` file. This token is required for standard management operations (Kill Switch, AI Learning).
 ```bash
 python3 generate_token.py
 ```
-2. **Environment Variables**: Create a `.env` file in the project root and add your keys (never share this file!):
+2. **Sharing Authorization**: On new machines, the bot will be locked. To authorize the bot for use, you must provide the **SHARING_ACTIVATION_KEY** (provided by the bot owner) via the Web HUD API.
+3. **Environment Variables**: Create a `.env` file in the project root and add your keys (never share this file!):
 ```bash
 # Alpaca Keys
 ALPACA_KEY=your_key_here

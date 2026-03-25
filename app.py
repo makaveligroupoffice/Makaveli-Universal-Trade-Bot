@@ -110,18 +110,20 @@ def authorize_bot():
         data = request.json or {}
         token = data.get("token")
         
-        if token == Config.AUTH_TOKEN:
+        # This requires the SHARING_ACTIVATION_KEY (MAKA-VALI-PRIME-2026), 
+        # NOT the generated AUTH_TOKEN. Only the owner knows this.
+        if token == Config.SHARING_ACTIVATION_KEY:
             from bot_state import BotStateStore
             store = BotStateStore(Config.BOT_STATE_FILE)
             state = store.load()
             state["sharing_authorized"] = True
             store.save(state)
-            logger.info("Bot successfully AUTHORIZED with token.")
-            return jsonify({"ok": True, "message": "Authorized successfully"})
+            logger.info("Bot successfully SHARING-AUTHORIZED with Master Key.")
+            return jsonify({"ok": True, "message": "Sharing authorized successfully!"})
         else:
-            return jsonify({"ok": False, "error": "Invalid token"}), 401
+            return jsonify({"ok": False, "error": "Invalid Sharing Activation Key"}), 401
     except Exception as e:
-        logger.error(f"Error authorizing bot: {e}")
+        logger.error(f"Error authorizing bot sharing: {e}")
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/rotate-token", methods=["POST"])

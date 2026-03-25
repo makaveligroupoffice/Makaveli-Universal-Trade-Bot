@@ -1374,10 +1374,11 @@ class AutoTrader:
                 sys.exit(1)
                 
             if not state_raw.get("sharing_authorized", False):
-                # If not authorized, we check if an AUTH_TOKEN is provided in environment
-                # that matches our Config.AUTH_TOKEN. This is a one-time "activation".
-                # For this simple implementation, we check if the user has EVER authorized.
-                log.warning("Bot sharing not authorized. Please authorize with your token.")
+                # If not authorized, we check if the SHARING_ACTIVATION_KEY is provided.
+                # Only the owner knows this key (MAKA-VALI-PRIME-2026).
+                # New users CANNOT bypass this by just generating a local AUTH_TOKEN.
+                log.warning("Bot sharing NOT AUTHORIZED. Access Denied.")
+                log.warning("Please contact the owner for the Sharing Activation Key.")
                 if not single_cycle:
                     send_notification("Trade Bot startup blocked: Authorization Required", title="Security Alert")
                 
