@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+import requests
 import zipfile
 import io
 import csv
@@ -110,18 +111,57 @@ def authorize_bot():
         data = request.json or {}
         token = data.get("token")
         
-        # This requires the SHARING_ACTIVATION_KEY (MAKA-VALI-PRIME-2026), 
-        # NOT the generated AUTH_TOKEN. Only the owner knows this.
+        from bot_state import BotStateStore
+        from license_manager import LicenseManager
+        store = BotStateStore(Config.BOT_STATE_FILE)
+        state = store.load()
+
+        # Step 1: Check for One-Time Activation Key (ACT-XXXX-...)
+        if token and token.startswith("ACT-"):
+            # Verify the ACT key against the license server
+            try:
+                if Config.LICENSE_URL:
+                    response = requests.get(Config.LICENSE_URL, timeout=10)
+                    response.raise_for_status()
+                    license_data = response.json()
+                    
+                    ids_status = license_data.get("ids", {})
+                    key_status = ids_status.get(token)
+                    
+                    if key_status == "PENDING":
+                        # Valid one-time key! Bind it to this machine.
+                        machine_id = LicenseManager.get_machine_id()
+                        state["sharing_authorized"] = True
+                        state["licensed_machine_id"] = machine_id
+                        # We store the ACT key as the LICENSE_ID for this user
+                        # They will need to update their .env with this LICENSE_ID
+                        store.save(state)
+                        
+                        logger.info(f"Bot activated with ONE-TIME KEY: {token}. Bound to: {machine_id}")
+                        return jsonify({
+                            "ok": True, 
+                            "message": "Bot activated successfully!",
+                            "details": f"Your License ID is now: {token}. Please update your .env with: LICENSE_ID={token}"
+                        })
+                    elif isinstance(key_status, dict) and key_status.get("machine_id"):
+                        # Key already used and bound
+                        return jsonify({"ok": False, "error": "This Activation Key has already been used on another machine."}), 403
+                    else:
+                        return jsonify({"ok": False, "error": "Invalid or Expired Activation Key."}), 401
+                else:
+                    return jsonify({"ok": False, "error": "LICENSE_URL not configured on server."}), 500
+            except Exception as e:
+                logger.error(f"Error verifying activation key: {e}")
+                return jsonify({"ok": False, "error": f"Connection to license server failed: {e}"}), 500
+
+        # Step 2: Fallback to Master SHARING_ACTIVATION_KEY (for owner's manual override)
         if token == Config.SHARING_ACTIVATION_KEY:
-            from bot_state import BotStateStore
-            store = BotStateStore(Config.BOT_STATE_FILE)
-            state = store.load()
             state["sharing_authorized"] = True
             store.save(state)
             logger.info("Bot successfully SHARING-AUTHORIZED with Master Key.")
             return jsonify({"ok": True, "message": "Sharing authorized successfully!"})
         else:
-            return jsonify({"ok": False, "error": "Invalid Sharing Activation Key"}), 401
+            return jsonify({"ok": False, "error": "Invalid Activation Key or Master Key"}), 401
     except Exception as e:
         logger.error(f"Error authorizing bot sharing: {e}")
         return jsonify({"ok": False, "error": str(e)})

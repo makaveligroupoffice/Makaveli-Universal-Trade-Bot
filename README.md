@@ -34,7 +34,9 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
 - **Multi-Bot Scaling**: 
     - Orchestrates specialized **Scalper, Swing, and Trend Follower** bots under a Master Risk Controller.
     - **Heartbeat Monitoring**: Ensures 24/7 uptime with automated failover and error recovery.
-- **Advanced Licensing & Revocation**: 
+- **Machine-Bound Licensing**: 
+    - **Single-Use Activation**: Licenses are now bound to the specific hardware on first use, preventing unauthorized sharing or reuse.
+    - **One-Time Keys**: Supports `ACT-XXXX` activation keys that automatically bind the bot to the user's machine fingerprint.
     - **Remote Kill Switch**: Allows the owner to revoke access remotely via a centralized license server if needed.
     - **Master Auth Token**: Secured via `logs/auth.env` and required for all high-risk operations (Kill Switch, Authorization, Token Rotation).
 - **Weekly Fast Audit Reports**: 
@@ -110,7 +112,10 @@ pip install -r requirements.txt
 ```bash
 python3 generate_token.py
 ```
-2. **Sharing Authorization**: On new machines, the bot will be locked. To authorize the bot for use, you must provide the **SHARING_ACTIVATION_KEY** (provided by the bot owner) via the Web HUD API.
+2. **Sharing Authorization & Licensing**: 
+    - On new machines, the bot will be locked. To authorize, you must provide a **SHARING_ACTIVATION_KEY** (Master Key) or a **One-Time Activation Key** (`ACT-XXXX`) via the Web HUD.
+    - **One-Time Keys**: When an `ACT-XXXX` key is used, the bot automatically binds itself to that specific machine's hardware ID. This key then becomes the user's `LICENSE_ID`.
+    - **Hardware Binding**: Once activated, the bot cannot be shared or moved to another machine without the owner's permission.
 3. **Environment Variables**: Create a `.env` file in the project root and add your keys (never share this file!):
 ```bash
 # Alpaca Keys
@@ -120,10 +125,10 @@ ALPACA_PAPER=true
 
 # Security
 WEBHOOK_SECRET=your_bot_secret_here
-AUTH_TOKEN=your_token_from_logs_auth_env  # Or leave to load automatically
+AUTH_TOKEN=your_token_from_logs_auth_env
 
 # Licensing
-LICENSE_ID=trial_user_001
+LICENSE_ID=your_activation_key_here (e.g., ACT-12345678)
 LICENSE_URL=https://.../status.json
 ```
 
