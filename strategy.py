@@ -177,7 +177,7 @@ class Strategy:
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
 
-        volatility_excessive = last['atr14'] > (last['close'] * 0.02)  # Reduced threshold for volatility
+        volatility_excessive = last['atr14'] > (last['close'] * 0.015)  # Reduced threshold for volatility
         last_candle_green = last['close'] > prev['close']
         
         from datetime import datetime
@@ -235,7 +235,7 @@ class Strategy:
 
         mom_match = False
         if "RSI" in active:
-            if last['rsi14'] < 35 and last_candle_green:  # Adjusted RSI threshold for oversold
+            if last['rsi14'] < 30 and last_candle_green:  # Adjusted RSI threshold for oversold
                 matches.append("RSI_OVERSOLD")
                 strength_score += 0.4
                 mom_match = True
@@ -318,7 +318,7 @@ class Strategy:
         is_trending = last['adx'] > Config.MIN_ADX_TREND
         rsi_safe = last['rsi14'] < 70
 
-        meets_base_confluence = (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe)
+        meets_base_confluence = (num_families >= 3 and final_strength >= 0.75 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe)
         
         if not meets_base_confluence:
             if "TREND_SNIPER" in matches and last['rvol'] > 3.5 and is_trending:
@@ -422,7 +422,7 @@ class Strategy:
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
 
-        volatility_excessive = last['atr14'] > (last['close'] * 0.02)  # Reduced threshold for volatility
+        volatility_excessive = last['atr14'] > (last['close'] * 0.015)  # Reduced threshold for volatility
         last_candle_red = last['close'] < prev['close']
         
         from datetime import datetime
@@ -556,7 +556,7 @@ class Strategy:
         is_trending = last['adx'] > Config.MIN_ADX_TREND
         rsi_safe = last['rsi14'] > 30
 
-        meets_base_confluence = (num_families >= 3 and final_strength >= 0.7 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe)
+        meets_base_confluence = (num_families >= 3 and final_strength >= 0.75 and rsi_safe) or (num_families >= 2 and final_strength >= 0.85 and rsi_safe)
         
         if not meets_base_confluence:
             if "SNIPER_SHORT" in matches and last['rvol'] > 3.5 and is_trending:
