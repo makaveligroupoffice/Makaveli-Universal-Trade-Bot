@@ -177,7 +177,7 @@ class Strategy:
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
 
-        volatility_excessive = last['atr14'] > (last['close'] * 0.015)  # Reduced threshold for volatility
+        volatility_excessive = last['atr14'] > (last['close'] * 0.01)  # Adjusted threshold for volatility
         last_candle_green = last['close'] > prev['close']
         
         from datetime import datetime
@@ -422,7 +422,7 @@ class Strategy:
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
 
-        volatility_excessive = last['atr14'] > (last['close'] * 0.015)  # Reduced threshold for volatility
+        volatility_excessive = last['atr14'] > (last['close'] * 0.01)  # Adjusted threshold for volatility
         last_candle_red = last['close'] < prev['close']
         
         from datetime import datetime
