@@ -1,3 +1,27 @@
+function withdrawProfitsToBank() {
+    const token = prompt('Enter Authorization Token to confirm profit withdrawal:');
+    if (!token) return;
+    
+    if (!confirm('This will send all profits above your capital reserve to your linked bank account. CONTINUE?')) return;
+    
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> INITIATING PROFIT WITHDRAWAL...<br>`;
+    
+    fetch('/api/bot/withdraw-profits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+    }).then(res => res.json()).then(data => {
+        if (data.ok) {
+            log.innerHTML += `<span class="text-green-400 font-bold">> SUCCESS: ${data.message}</span><br>`;
+            updateStats();
+        } else {
+            log.innerHTML += `<span class="text-red-400 font-bold">> ERROR: ${data.error}</span><br>`;
+        }
+        log.scrollTop = log.scrollHeight;
+    });
+}
+
 const canvas = document.getElementById('botCanvas');
 const ctx = canvas.getContext('2d');
 const chestMonitor = document.getElementById('chestMonitor');
@@ -25,6 +49,65 @@ function updateStats() {
                 if (data.sharpe_ratio) document.getElementById('sharpeRatio').innerText = data.sharpe_ratio.toFixed(2);
                 if (data.profit_factor) document.getElementById('profitFactor').innerText = data.profit_factor.toFixed(2);
                 document.getElementById('system-time').innerText = `LAST SYNC: ${new Date().toLocaleTimeString()}`;
+
+                // Update Withdrawal Panel
+                const withdrawalPanel = document.getElementById('withdrawalPanel');
+                if (data.bank_withdrawal_enabled) {
+                    withdrawalPanel.classList.remove('hidden');
+                    document.getElementById('withdrawableProfit').innerText = `$${data.withdrawable_profit.toFixed(2)}`;
+                    document.getElementById('minReserve').innerText = `$${data.min_capital_reserve.toLocaleString()}`;
+                    
+                    if (data.withdrawable_profit <= 0) {
+                        withdrawalPanel.classList.add('opacity-40');
+                    } else {
+                        withdrawalPanel.classList.remove('opacity-40');
+                    }
+                } else {
+                    withdrawalPanel.classList.add('hidden');
+                }
+
+                // Update Mode Badges
+                const modeBadge = document.getElementById('modeBadge');
+                const liveSafetyBadge = document.getElementById('liveSafetyBadge');
+                
+                if (data.alpaca_paper) {
+                    modeBadge.innerText = 'PAPER MODE';
+                    modeBadge.className = 'flex-1 cyber-panel p-2 rounded text-center text-[10px] font-bold uppercase tracking-widest bg-blue-900 bg-opacity-20 border-blue-500 text-blue-400';
+                } else {
+                    modeBadge.innerText = 'LIVE MODE';
+                    modeBadge.className = 'flex-1 cyber-panel p-2 rounded text-center text-[10px] font-bold uppercase tracking-widest bg-red-900 bg-opacity-40 border-red-500 text-red-500 glitch-text';
+                }
+
+                if (data.live_mode_enabled) {
+                    liveSafetyBadge.innerText = 'LIVE ARMED';
+                    liveSafetyBadge.className = 'flex-1 cyber-panel p-2 rounded text-center text-[10px] font-bold uppercase tracking-widest bg-orange-900 bg-opacity-20 border-orange-500 text-orange-500';
+                } else {
+                    liveSafetyBadge.innerText = 'LIVE LOCKED';
+                    liveSafetyBadge.className = 'flex-1 cyber-panel p-2 rounded text-center text-[10px] font-bold uppercase tracking-widest bg-gray-900 bg-opacity-40 border-gray-700 text-gray-500';
+                }
+
+                // Update Elite Status
+                const whaleValue = document.getElementById('whaleValue');
+                const whaleVal = data.whale_sentiment || 0;
+                if (whaleVal > 1000) {
+                    whaleValue.innerText = `BULLISH (${whaleVal.toFixed(0)})`;
+                    whaleValue.className = 'text-green-400 font-bold';
+                } else if (whaleVal < -1000) {
+                    whaleValue.innerText = `BEARISH (${whaleVal.toFixed(0)})`;
+                    whaleValue.className = 'text-red-400 font-bold';
+                } else {
+                    whaleValue.innerText = `NEUTRAL (${whaleVal.toFixed(0)})`;
+                    whaleValue.className = 'text-white';
+                }
+
+                const hedgeStatus = document.getElementById('hedgeStatus');
+                if (data.hedge_active) {
+                    hedgeStatus.innerText = 'ARMED (SHIELD UP)';
+                    hedgeStatus.className = 'text-orange-500 font-bold glitch-text';
+                } else {
+                    hedgeStatus.innerText = 'INACTIVE';
+                    hedgeStatus.className = 'text-green-400';
+                }
 
                 // Update License Alert
                 const licenseAlert = document.getElementById('licenseAlert');

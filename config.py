@@ -20,13 +20,37 @@ class Config:
 
     # Broker
     BROKER: str = os.getenv("BROKER", "ALPACA")
-    ALPACA_KEY: str = os.getenv("ALPACA_KEY", "")
-    ALPACA_SECRET: str = os.getenv("ALPACA_SECRET", "")
-    ALPACA_BASE_URL: str = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+    
+    # Paper Credentials (for testing)
+    ALPACA_PAPER_KEY: str = os.getenv("ALPACA_PAPER_KEY", "")
+    ALPACA_PAPER_SECRET: str = os.getenv("ALPACA_PAPER_SECRET", "")
+    
+    # Live Credentials (for real money)
+    ALPACA_LIVE_KEY: str = os.getenv("ALPACA_LIVE_KEY", "")
+    ALPACA_LIVE_SECRET: str = os.getenv("ALPACA_LIVE_SECRET", "")
+
+    # Mode Selector
     ALPACA_PAPER: bool = os.getenv("ALPACA_PAPER", "true").lower() == "true"
+    
+    # Master Safety Toggles
+    LIVE_MODE_ENABLED: bool = os.getenv("LIVE_MODE_ENABLED", "false").lower() == "true"
     LIVE_TRADING_ACKNOWLEDGED: str = os.getenv("LIVE_TRADING_ACKNOWLEDGED", "")
 
-    # Risk / account controls
+    # Active Key Selection (Dynamic)
+    @property
+    def ALPACA_KEY(self) -> str:
+        return self.ALPACA_PAPER_KEY if self.ALPACA_PAPER else self.ALPACA_LIVE_KEY
+
+    @property
+    def ALPACA_SECRET(self) -> str:
+        return self.ALPACA_PAPER_SECRET if self.ALPACA_PAPER else self.ALPACA_LIVE_SECRET
+
+    @property
+    def ALPACA_BASE_URL(self) -> str:
+        return "https://paper-api.alpaca.markets" if self.ALPACA_PAPER else "https://api.alpaca.markets"
+
+    # CRISIS MODE
+    AUTO_HEDGE_ENABLED: bool = os.getenv("AUTO_HEDGE_ENABLED", "true").lower() == "true"
     STARTING_EQUITY: float = float(os.getenv("STARTING_EQUITY", "500"))
     RISK_PER_TRADE_DOLLARS: float = float(os.getenv("RISK_PER_TRADE_DOLLARS", "1.50"))
     MAX_DAILY_LOSS_DOLLARS: float = float(os.getenv("MAX_DAILY_LOSS_DOLLARS", "7.50"))
@@ -134,7 +158,8 @@ class Config:
     # Trade Quality Filter
     MIN_TRADE_QUALITY_SCORE: float = float(os.getenv("MIN_TRADE_QUALITY_SCORE", "75.0"))
     
-    # Crisis Mode
+    # CRISIS MODE
+    AUTO_HEDGE_ENABLED: bool = os.getenv("AUTO_HEDGE_ENABLED", "true").lower() == "true"
     FLASH_CRASH_PROTECTION_PCT: float = float(os.getenv("FLASH_CRASH_PROTECTION_PCT", "5.0")) # 5% drop in 1 min triggers shutdown
     VOLATILITY_SPIKE_KILL_SWITCH: bool = os.getenv("VOLATILITY_SPIKE_KILL_SWITCH", "true").lower() == "true"
     NEWS_SHOCK_PAUSE_MINUTES: int = int(os.getenv("NEWS_SHOCK_PAUSE_MINUTES", "30"))
@@ -260,3 +285,11 @@ class Config:
     SMS_TWILIO_TOKEN: str | None = os.getenv("SMS_TWILIO_TOKEN")
     SMS_TWILIO_NUMBER: str | None = os.getenv("SMS_TWILIO_NUMBER")
     SMS_RECEIVER: str | None = os.getenv("SMS_RECEIVER")
+
+    # 71-80 WEEKLY CASHFLOW & BANK WITHDRAWAL
+    BANK_WITHDRAWAL_ENABLED: bool = os.getenv("BANK_WITHDRAWAL_ENABLED", "false").lower() == "true"
+    BANK_ACCOUNT_ID: str | None = os.getenv("BANK_ACCOUNT_ID") # Alpaca ACH relationship ID
+    MIN_CAPITAL_RESERVE: float = float(os.getenv("MIN_CAPITAL_RESERVE", "100000.0")) # Never withdraw below this
+    WITHDRAWAL_DAY_OF_WEEK: int = int(os.getenv("WITHDRAWAL_DAY_OF_WEEK", "4")) # 4 = Friday
+    WITHDRAWAL_TIME_HHMM: str = os.getenv("WITHDRAWAL_TIME_HHMM", "1630") # 4:30 PM (after market close)
+    AUTO_WITHDRAW_PROFITS: bool = os.getenv("AUTO_WITHDRAW_PROFITS", "false").lower() == "true"

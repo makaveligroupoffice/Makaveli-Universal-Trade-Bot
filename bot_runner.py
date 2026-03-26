@@ -102,12 +102,22 @@ class AutoTrader:
     def _validate_launch_mode(self):
         paper = self.user.alpaca_paper if self.user else Config.ALPACA_PAPER
         if not paper:
+            # Triple-check safety for Live trading
             required_ack = "I_UNDERSTAND_THIS_IS_REAL_MONEY"
             if Config.LIVE_TRADING_ACKNOWLEDGED != required_ack:
                 raise RuntimeError(
                     "Live trading blocked. Set LIVE_TRADING_ACKNOWLEDGED="
                     "I_UNDERSTAND_THIS_IS_REAL_MONEY to enable live mode."
                 )
+            
+            # Additional safety toggle check
+            if not Config.LIVE_MODE_ENABLED:
+                raise RuntimeError(
+                    "Live trading blocked. LIVE_MODE_ENABLED is false in Config. "
+                    "This is an extra safety layer to prevent accidental real-money trades."
+                )
+            
+            log.warning("!!! BOT IS RUNNING IN LIVE TRADING MODE (REAL MONEY) !!!")
 
     @staticmethod
     def _default_daily_summary() -> dict:
@@ -303,6 +313,49 @@ class AutoTrader:
         msg = "\n".join(report)
         log.info("Sending bot health report...")
         send_notification(msg, title="🛠️ BOT HEALTH STATUS")
+
+    def _check_auto_withdrawal(self):
+        """
+        Periodically checks if it's the right time and day to perform 
+        an automated profit withdrawal to the linked bank account.
+        """
+        if not Config.BANK_WITHDRAWAL_ENABLED or not Config.AUTO_WITHDRAW_PROFITS:
+            return
+
+        from datetime import datetime
+        now = datetime.now()
+        current_day = now.weekday()  # 0=Monday, 6=Sunday
+        current_hhmm = now.strftime("%H%M")
+
+        # Check if it's the configured day and time
+        if current_day == Config.WITHDRAWAL_DAY_OF_WEEK and current_hhmm == Config.WITHDRAWAL_TIME_HHMM:
+            # Check if we've already withdrawn today to prevent duplicates
+            last_withdraw_date = self.state.get("last_auto_withdrawal_date")
+            today_str = now.strftime("%Y-%m-%d")
+            
+            if last_withdraw_date == today_str:
+                return
+
+            try:
+                equity = self.broker.get_account_equity()
+                from performance import PerformanceAnalyzer
+                analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
+                profit = analyzer.calculate_withdrawable_profit(equity)
+
+                if profit > 0:
+                    log.info(f"Triggering AUTO PROFIT WITHDRAWAL: ${profit:.2f}")
+                    self.broker.withdraw_to_bank(profit, Config.BANK_ACCOUNT_ID)
+                    
+                    self.state["last_auto_withdrawal_date"] = today_str
+                    self._save_state()
+                    
+                    msg = f"AUTO PROFIT WITHDRAWAL SUCCESSFUL!\nAmount: ${profit:.2f}\nBank Account: {Config.BANK_ACCOUNT_ID}"
+                    send_notification(msg, title="💰 PROFIT ALERT — WITHDRAWAL COMPLETE")
+                else:
+                    log.info(f"Auto withdrawal skipped: No profit above reserve ${Config.MIN_CAPITAL_RESERVE}")
+            except Exception as e:
+                log.error(f"Auto withdrawal failed: {e}")
+                send_notification(f"Auto withdrawal failed: {e}", title="❌ WITHDRAWAL ERROR")
 
     @staticmethod
     def _now_ts() -> float:
@@ -958,6 +1011,22 @@ class AutoTrader:
             if action == "short":
                 effective_min_strength += 0.05 # Higher bar for shorts
             
+            # ELITE FEATURE: 'The Slicer' (Performance Self-Throttling)
+            slicer_data = self.analyzer.get_performance_slicer(days=30)
+            if slicer_data:
+                current_hour = datetime.now().hour
+                current_day = datetime.now().weekday()
+                
+                # Check if we are in a 'Dead Zone'
+                is_power_hour = current_hour in slicer_data.get("power_hours", [])
+                is_power_day = current_day in slicer_data.get("power_days", [])
+                
+                if not is_power_hour or not is_power_day:
+                    effective_min_strength += 0.10 # Raise the bar in dead zones
+                    log.info(f"Slicer: Dead Zone detected (Hour {current_hour}, Day {current_day}). Raising threshold to {effective_min_strength}")
+                else:
+                    log.info(f"Slicer: POWER ZONE active. Maintaining optimal threshold {effective_min_strength}")
+
             # 4.6. Time-Based Chop Zone Filter (9:30 - 10:30 AM EST)
             # Increase strength requirements during high-volatility market open
             if current_hhmm and 930 <= current_hhmm <= 1030:
@@ -1477,6 +1546,9 @@ class AutoTrader:
                     log.warning(f"Global News Filter Active: {reason}. Skipping entries.")
                 else:
                     self.try_entry(current_hhmm=current_hhmm)
+
+                # Periodic Auto-Withdrawal Check
+                self._check_auto_withdrawal()
                     
                 self._reset_failures()
 

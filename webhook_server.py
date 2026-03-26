@@ -5,7 +5,7 @@ import json
 import jwt
 from functools import wraps
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 
 from config import Config
@@ -85,10 +85,13 @@ def _auth_ok(req) -> bool:
     return _get_authenticated_user(req) is not None
 
 
-@app.post("/register")
+@app.route("/register", methods=["GET", "POST"])
 def register():
     if not Config.ALLOW_REGISTRATION:
         return jsonify({"ok": False, "error": "Registration is currently disabled"}), 403
+
+    if request.method == "GET":
+        return render_template("register.html")
 
     data = request.get_json(silent=True) or {}
     username = data.get("username")
@@ -146,8 +149,10 @@ def update_broker_settings():
     return jsonify({"ok": True, "message": "Broker settings updated successfully"})
 
 
-@app.post("/login")
+@app.route("/login", methods=["GET", "POST"])
 def login():
+    if request.method == "GET":
+        return render_template("login.html")
     data = request.get_json(silent=True) or {}
     username = data.get("username")
     password = data.get("password")

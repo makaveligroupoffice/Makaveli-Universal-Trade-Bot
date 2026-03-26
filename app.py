@@ -23,6 +23,9 @@ app = webhook_app
 
 @app.route("/")
 def index():
+    if not current_user.is_authenticated:
+        from flask import redirect, url_for
+        return redirect(url_for('login'))
     return render_template("index.html")
 
 @app.route("/static/manifest.json")
@@ -43,6 +46,20 @@ def get_stats():
         # Get account info
         acct = broker.get_account()
         equity = float(acct.equity) if acct else 0.0
+        
+        # Get Whale Sentiment (as proxy for market-wide order flow imbalance)
+        bars = broker.data.get_recent_bars("SPY", minutes=30) if hasattr(broker, 'data') else None
+        if not bars:
+            from market_data import MarketDataClient
+            bars = MarketDataClient().get_recent_bars("SPY", minutes=30)
+        
+        from strategy import Strategy
+        df = Strategy._calculate_indicators(bars) if bars else None
+        whale_sentiment = df['pressure_delta_ema'].iloc[-1] if df is not None else 0.0
+        
+        # Determine if we are using Paper or Live keys
+        alpaca_paper = Config.ALPACA_PAPER
+        live_mode_enabled = Config.LIVE_MODE_ENABLED
         
         # Get risk state
         with open(Config.RISK_STATE_FILE, "r") as f:
@@ -76,8 +93,15 @@ def get_stats():
             "equity": equity,
             "operational_state": bot_state.get("operational_state", "SCANNING"),
             "bot_enabled": bot_state.get("enabled", True),
+            "bank_withdrawal_enabled": Config.BANK_WITHDRAWAL_ENABLED,
+            "min_capital_reserve": Config.MIN_CAPITAL_RESERVE,
+            "withdrawable_profit": analyzer.calculate_withdrawable_profit(equity),
             "license_revoked": bot_state.get("license_revoked", False),
             "license_id": bot_state.get("license_id", "UNKNOWN"),
+            "alpaca_paper": alpaca_paper,
+            "live_mode_enabled": live_mode_enabled,
+            "hedge_active": risk_state.get("hedge_active", False),
+            "whale_sentiment": whale_sentiment,
             "positions": pos_data,
             "sharpe_ratio": perf.get("sharpe_ratio"),
             "profit_factor": perf.get("profit_factor")
@@ -239,6 +263,45 @@ def reading_session():
         return jsonify({"ok": True, "message": "Reading session started. The bot is analyzing 25+ trading classics and will update its code autonomously."})
     except Exception as e:
         logger.error(f"Error starting reading session: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/bot/withdraw-profits", methods=["POST"])
+def withdraw_profits():
+    """Manual trigger to withdraw profits to a linked bank account."""
+    try:
+        data = request.json or {}
+        token = data.get("token")
+        
+        # Verify token for security
+        if token != Config.AUTH_TOKEN:
+            return jsonify({"ok": False, "error": "Invalid token"}), 401
+            
+        if not Config.BANK_WITHDRAWAL_ENABLED or not Config.BANK_ACCOUNT_ID:
+            return jsonify({"ok": False, "error": "Bank withdrawal not enabled or BANK_ACCOUNT_ID missing in .env"}), 400
+            
+        from broker_alpaca import AlpacaBroker
+        from performance import PerformanceAnalyzer
+        
+        broker = AlpacaBroker()
+        equity = broker.get_account_equity()
+        
+        analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
+        profit = analyzer.calculate_withdrawable_profit(equity)
+        
+        if profit <= 0:
+            return jsonify({"ok": False, "error": f"No profit available to withdraw (Equity: ${equity:.2f}, Reserve: ${Config.MIN_CAPITAL_RESERVE:.2f})"}), 400
+            
+        # Execute withdrawal
+        result = broker.withdraw_to_bank(profit, Config.BANK_ACCOUNT_ID)
+        
+        logger.info(f"WEEKLY PROFIT WITHDRAWAL: ${profit:.2f} sent to bank account {Config.BANK_ACCOUNT_ID}")
+        return jsonify({
+            "ok": True, 
+            "message": f"Withdrawal of ${profit:.2f} initiated to your bank account!",
+            "details": result
+        })
+    except Exception as e:
+        logger.error(f"Error withdrawing profits: {e}")
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/kill", methods=["POST"])

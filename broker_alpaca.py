@@ -380,3 +380,32 @@ class AlpacaBroker(BrokerBase):
         """
         from market_data import MarketDataClient
         return MarketDataClient().get_latest_mid_price(symbol)
+
+    def withdraw_to_bank(self, amount: float, bank_account_id: str):
+        """
+        Initiate an ACH withdrawal to a linked bank account via REST API.
+        The Python SDK (Alpaca-py) doesn't have a direct method for transfers yet, 
+        so we use the standard Requests library to hit the /v2/transfers endpoint.
+        """
+        import requests
+        
+        endpoint = f"{Config.ALPACA_BASE_URL.replace('paper-api', 'api')}/v2/transfers"
+        
+        headers = {
+            "APCA-API-KEY-ID": self.client._api_key,
+            "APCA-API-SECRET-KEY": self.client._secret_key,
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "relationship_id": bank_account_id,
+            "amount": str(round(amount, 2)),
+            "direction": "OUTGOING"
+        }
+        
+        response = requests.post(endpoint, json=payload, headers=headers)
+        
+        if response.status_code != 200:
+            raise Exception(f"Withdrawal failed: {response.text}")
+            
+        return response.json()

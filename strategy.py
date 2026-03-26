@@ -123,6 +123,18 @@ class Strategy:
         df['supertrend'] = supertrend
         df['supertrend_bull'] = (df['close'] > df['supertrend'])
 
+        # --- ELITE FEATURE: 'Whale Watcher' (Order Flow Imbalance) ---
+        # Approximates buying vs selling pressure using candle wicks and volume
+        df['buying_pressure'] = (df['close'] - df['low']) / (df['high'] - df['low']) * df['volume']
+        df['selling_pressure'] = (df['high'] - df['close']) / (df['high'] - df['low']) * df['volume']
+        df['pressure_delta'] = df['buying_pressure'] - df['selling_pressure']
+        df['pressure_delta_ema'] = df['pressure_delta'].ewm(span=14, adjust=False).mean()
+        
+        # Identify "Institutional Walls" (Volume delta > 2x average)
+        df['avg_delta'] = df['pressure_delta'].abs().rolling(20).mean()
+        df['whale_buy_wall'] = (df['pressure_delta'] > 0) & (df['pressure_delta'] > df['avg_delta'] * 2)
+        df['whale_sell_wall'] = (df['pressure_delta'] < 0) & (df['pressure_delta'].abs() > df['avg_delta'] * 2)
+
         # --- Technical Ratings & Momentum Scoring ---
         df['mom_rsi'] = df['rsi14'] / 100.0
         df['mom_macd'] = (df['macd_hist'] - df['macd_hist'].rolling(50).min()) / (df['macd_hist'].rolling(50).max() - df['macd_hist'].rolling(50).min())
@@ -173,6 +185,10 @@ class Strategy:
         
         if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
             return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
+
+        # ELITE FEATURE: 'Whale Watcher' (Order Flow Filter)
+        if last.get('whale_sell_wall') and not last.get('whale_buy_wall'):
+            return False, "Institutional Sell Wall detected (Whale Watcher)", 0.0, last_indicators
 
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
@@ -418,6 +434,10 @@ class Strategy:
         
         if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
             return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
+
+        # ELITE FEATURE: 'Whale Watcher' (Order Flow Filter)
+        if last.get('whale_buy_wall') and not last.get('whale_sell_wall'):
+            return False, "Institutional Buy Wall detected (Whale Watcher)", 0.0, last_indicators
 
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators

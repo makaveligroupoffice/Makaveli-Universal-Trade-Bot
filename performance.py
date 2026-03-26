@@ -436,3 +436,87 @@ class PerformanceAnalyzer:
                 pass
 
         return new_config
+
+    def calculate_withdrawable_profit(self, current_equity: float) -> float:
+        """
+        Calculates how much profit can be withdrawn while maintaining
+        the MIN_CAPITAL_RESERVE threshold.
+        """
+        if current_equity <= Config.MIN_CAPITAL_RESERVE:
+            return 0.0
+        
+        return current_equity - Config.MIN_CAPITAL_RESERVE
+
+    def get_performance_slicer(self, days: int = 30) -> dict:
+        """
+        ELITE FEATURE: 'The Slicer' (Performance Attribution)
+        Analyzes trade history to find high-probability time/day/asset clusters.
+        """
+        if not os.path.exists(self.journal_path):
+            return {}
+
+        # time_clusters: hour_of_day -> {wins: X, losses: Y, pnl: Z}
+        # day_clusters: day_of_week -> {wins: X, losses: Y, pnl: Z}
+        time_clusters = {h: {"wins": 0, "losses": 0, "pnl": 0.0} for h in range(24)}
+        day_clusters = {d: {"wins": 0, "losses": 0, "pnl": 0.0} for d in range(7)}
+        asset_stats = {}
+
+        try:
+            with open(self.journal_path, "r") as f:
+                for line in f:
+                    entry = json.loads(line)
+                    if entry["event_type"] not in ["sell_filled", "cover_filled"]:
+                        continue
+                    
+                    ts = datetime.fromisoformat(entry["timestamp"])
+                    pnl = entry.get("pnl", 0.0)
+                    symbol = entry.get("symbol", "N/A")
+                    
+                    # Attribution
+                    hour = ts.hour
+                    day = ts.weekday() # 0=Mon, 6=Sun
+                    
+                    target = time_clusters[hour]
+                    target["pnl"] += pnl
+                    if pnl > 0: target["wins"] += 1
+                    else: target["losses"] += 1
+                    
+                    target = day_clusters[day]
+                    target["pnl"] += pnl
+                    if pnl > 0: target["wins"] += 1
+                    else: target["losses"] += 1
+                    
+                    if symbol not in asset_stats:
+                        asset_stats[symbol] = {"wins": 0, "losses": 0, "pnl": 0.0}
+                    asset_stats[symbol]["pnl"] += pnl
+                    if pnl > 0: asset_stats[symbol]["wins"] += 1
+                    else: asset_stats[symbol]["losses"] += 1
+
+        except Exception as e:
+            log.error(f"Slicer error: {e}")
+            return {}
+
+        # Identify "Power Zones" (Win rate > 60% and PnL > 0)
+        power_hours = []
+        for h, stats in time_clusters.items():
+            total = stats["wins"] + stats["losses"]
+            if total >= 3:
+                wr = stats["wins"] / total
+                if wr >= 0.6 and stats["pnl"] > 0:
+                    power_hours.append(h)
+
+        power_days = []
+        for d, stats in day_clusters.items():
+            total = stats["wins"] + stats["losses"]
+            if total >= 3:
+                wr = stats["wins"] / total
+                if wr >= 0.6 and stats["pnl"] > 0:
+                    power_days.append(d)
+
+        return {
+            "power_hours": power_hours,
+            "power_days": power_days,
+            "asset_stats": asset_stats,
+            "full_time_map": time_clusters,
+            "full_day_map": day_clusters
+        }

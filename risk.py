@@ -415,6 +415,17 @@ class RiskManager:
         # In practice, this would check a collection of symbol bars. 
         # For now, it's a placeholder logic within bot_runner's call.
 
+        # 10. ELITE FEATURE: 'Auto-Hedge' (Market Crash Detection)
+        if Config.AUTO_HEDGE_ENABLED and current_equity:
+            # If SPY (market proxy) is down > 2% in the last 60 bars, 
+            # we are in a high-risk 'Crash' regime.
+            # This would normally fetch SPY bars, here we assume it's passed or 
+            # we check general portfolio drawdown as a proxy.
+            if self.state.get("daily_pnl", 0.0) < -(base_equity * 0.02):
+                # Trigger 'Defensive Mode'
+                self.state["hedge_active"] = True
+                self._save_state()
+
         return True
 
     def calculate_risk_parity_size(self, symbol: str, current_equity: float, bars: list) -> float:
