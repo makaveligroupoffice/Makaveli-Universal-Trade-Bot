@@ -171,6 +171,43 @@ class MarketDataClient:
             
         return regime, change_30m
 
+    def get_historical_bars(self, symbol: str, minutes: int = 100, timeframe: str = "1Min"):
+        """Fetches historical bars for a symbol."""
+        from datetime import datetime, timedelta, timezone
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(minutes=minutes)
+        
+        # Use broker if available
+        from broker_alpaca import AlpacaBroker
+        broker = AlpacaBroker()
+        df = broker.get_historical_bars(symbol, start.isoformat(), end.isoformat(), timeframe)
+        
+        if df.empty:
+            return None
+            
+        # Convert df to bar list (simulating Alpaca bar objects)
+        from dataclasses import dataclass
+        @dataclass
+        class Bar:
+            open: float
+            high: float
+            low: float
+            close: float
+            volume: float
+            timestamp: datetime
+            
+        bars = []
+        for index, row in df.iterrows():
+            bars.append(Bar(
+                open=row['open'],
+                high=row['high'],
+                low=row['low'],
+                close=row['close'],
+                volume=row['volume'],
+                timestamp=index.to_pydatetime() if hasattr(index, 'to_pydatetime') else index
+            ))
+        return bars
+
     def get_option_latest_quote(self, symbol: str):
         """Fetch latest quote for an option symbol."""
         request = OptionLatestQuoteRequest(symbol_or_symbols=symbol)

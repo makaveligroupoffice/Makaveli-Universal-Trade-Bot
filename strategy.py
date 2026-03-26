@@ -162,7 +162,7 @@ class Strategy:
         return df
 
     @staticmethod
-    def should_buy(bars, dynamic_config: dict | None = None, active_strategies: list | None = None, symbol: str = "") -> tuple[bool, str, float, dict]:
+    def should_buy(bars, dynamic_config: dict | None = None, active_strategies: list | None = None, symbol: str = "", mtf_bars: dict | None = None) -> tuple[bool, str, float, dict]:
         # Ultimate Bot: Load optimized params if available
         if dynamic_config is None:
             dynamic_config = {}
@@ -177,6 +177,21 @@ class Strategy:
         if df is None:
             return False, "not enough bars", 0.0, {}
 
+        # --- Number One Bot: Fractal Multi-Timeframe Confirmation ---
+        if Config.ENABLE_FRACTAL_MTF and mtf_bars:
+            mtf_ok = True
+            for tf, tf_bars in mtf_bars.items():
+                if tf == "1Min": continue
+                tf_df = Strategy._calculate_indicators(tf_bars)
+                if tf_df is not None:
+                    tf_last = tf_df.iloc[-1]
+                    # Higher timeframe trend alignment (SMA 20)
+                    if tf_last['close'] < tf_last['sma20']:
+                        mtf_ok = False
+                        break
+            if not mtf_ok:
+                return False, "Fractal MTF Trend Mismatch", 0.0, df.iloc[-1].to_dict()
+
         import pandas as pd
         last = df.iloc[-1]
         last_indicators = last.to_dict()
@@ -186,12 +201,37 @@ class Strategy:
         matches = []
         strength_score = 0.0
         
-        from intelligence import ConfidenceEngine
+        from intelligence import ConfidenceEngine, PortfolioIntelligence
         from risk import RiskManager
         rm = RiskManager()
         scores = ConfidenceEngine.calculate_scores(bars, "CONFLUENCE", rm)
         trade_score = scores.get("trade", 0)
         
+        # --- Number One Bot: Liquidity Mapping Filter ---
+        if Config.ENABLE_LIQUIDITY_MAPPING:
+            from intelligence import PortfolioIntelligence # Using it for mapping if available
+            # We'll call the detector we just added to PortfolioIntelligence (it was added to the module)
+            from intelligence import PortfolioIntelligence as PI # Alias
+            # Wait, I added it as a static method to the module scope or PortfolioIntelligence?
+            # Let me check. Ah, I added it to the module as a standalone function or under a class?
+            # Looking at my previous multi_edit... I added it to the module before MarketRegimeIntelligence.
+            # No, I added it as a static method to PortfolioIntelligence? 
+            # Re-reading: 
+            # replace: "prioritize, disable... return... @staticmethod def detect_liquidity_pools(bars)... class MarketRegimeIntelligence"
+            # It was added to SelfAdaptingStrategySystem? No, look at the lines:
+            # 107: return prioritize, disable
+            # 108: 
+            # 109: @staticmethod
+            # 110: def detect_liquidity_pools(bars):
+            # It seems it was added inside SelfAdaptingStrategySystem.
+            from intelligence import SelfAdaptingStrategySystem
+            pools = SelfAdaptingStrategySystem.detect_liquidity_pools(bars)
+            # Avoid buying right into a SELL_SIDE_LIQUIDITY pool (resistance)
+            for pool in pools:
+                if pool['type'] == "SELL_SIDE_LIQUIDITY":
+                    if abs(last['close'] - pool['price']) / last['close'] < 0.002: # Within 0.2%
+                        return False, f"OMNISCIENT: Buying into Sell-Side Liquidity pool at {pool['price']}", 0.0, last_indicators
+
         volatility_excessive = last['atr14'] > (last['close'] * 0.005)  # Adjusted threshold for volatility
         last_candle_green = last['close'] > prev['close']
         

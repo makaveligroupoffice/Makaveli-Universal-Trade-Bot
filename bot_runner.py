@@ -930,6 +930,20 @@ class AutoTrader:
             if not bars:
                 continue
             
+            # --- Number One Bot: Fetch Multi-Timeframe Bars ---
+            mtf_bars = {}
+            if Config.ENABLE_FRACTAL_MTF:
+                for tf in Config.MTF_TIMEFRAMES:
+                    if tf == "1Min":
+                        mtf_bars[tf] = bars
+                    else:
+                        # Estimate minutes needed for 100 bars of this timeframe
+                        tf_unit = int(tf.replace("Min", ""))
+                        tf_minutes = tf_unit * 100
+                        tf_bars = self.data.get_historical_bars(symbol, minutes=tf_minutes, timeframe=tf)
+                        if tf_bars is not None:
+                            mtf_bars[tf] = tf_bars
+
             # News Awareness Filter
             if Config.ENABLE_NEWS_FILTER:
                 news = self.data.get_news(symbol, days=1)
@@ -956,7 +970,7 @@ class AutoTrader:
                 # Automatically decrease risk
                 signal_strength *= 0.5
 
-            should_buy, buy_reason, buy_strength, buy_indicators = self.strategy.should_buy(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol)
+            should_buy, buy_reason, buy_strength, buy_indicators = self.strategy.should_buy(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol, mtf_bars=mtf_bars)
             should_short, short_reason, short_strength, short_indicators = self.strategy.should_short(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol)
             
             action = None

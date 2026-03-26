@@ -167,6 +167,21 @@ class Config:
     AUTO_HEDGE_ENABLED: bool = os.getenv("AUTO_HEDGE_ENABLED", "true").lower() == "true"
     FLASH_CRASH_PROTECTION_PCT: float = float(os.getenv("FLASH_CRASH_PROTECTION_PCT", "5.0")) # 5% drop in 1 min triggers shutdown
     VOLATILITY_SPIKE_KILL_SWITCH: bool = os.getenv("VOLATILITY_SPIKE_KILL_SWITCH", "true").lower() == "true"
+    
+    # --- Number One Bot - Omniscient Execution ---
+    ENABLE_OMNISCIENT_EXECUTION: bool = os.getenv("ENABLE_OMNISCIENT_EXECUTION", "true").lower() == "true"
+    OMNISCIENT_MID_PRICE_LIMIT: bool = os.getenv("OMNISCIENT_MID_PRICE_LIMIT", "true").lower() == "true"
+    OMNISCIENT_MAX_RETRIES: int = int(os.getenv("OMNISCIENT_MAX_RETRIES", "3"))
+    OMNISCIENT_RETRY_DELAY_SECONDS: int = int(os.getenv("OMNISCIENT_RETRY_DELAY_SECONDS", "5"))
+    
+    # --- Number One Bot - Fractal Multi-Timeframe ---
+    ENABLE_FRACTAL_MTF: bool = os.getenv("ENABLE_FRACTAL_MTF", "true").lower() == "true"
+    MTF_TIMEFRAMES: tuple[str, ...] = ("1Min", "5Min", "15Min")
+    
+    # --- Number One Bot - Liquidity Mapping ---
+    ENABLE_LIQUIDITY_MAPPING: bool = os.getenv("ENABLE_LIQUIDITY_MAPPING", "true").lower() == "true"
+    LIQUIDITY_VOL_THRESHOLD: float = float(os.getenv("LIQUIDITY_VOL_THRESHOLD", "2.5"))
+    
     NEWS_SHOCK_PAUSE_MINUTES: int = int(os.getenv("NEWS_SHOCK_PAUSE_MINUTES", "30"))
     ECONOMIC_CALENDAR_FILTER: bool = os.getenv("ECONOMIC_CALENDAR_FILTER", "true").lower() == "true" # CPI, FOMC
     ECONOMIC_CALENDAR_BUFFER_MINUTES: int = int(os.getenv("ECONOMIC_CALENDAR_BUFFER_MINUTES", "30")) # Block 30m before/after

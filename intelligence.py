@@ -106,6 +106,32 @@ class SelfAdaptingStrategySystem:
         
         return prioritize, disable
 
+    @staticmethod
+    def detect_liquidity_pools(bars):
+        """Identifies potential liquidity pools (stop-loss clusters)."""
+        if len(bars) < 50:
+            return []
+        
+        # institutional pools are often at swing highs/lows with volume spikes
+        # or at round numbers.
+        pools = []
+        df = Strategy._calculate_indicators(bars)
+        if df is None: return []
+        
+        # Simple swing high/low detection
+        for i in range(5, len(df)-5):
+            is_high = all(df['high'].iloc[i] > df['high'].iloc[i-j] for j in range(1, 5)) and \
+                      all(df['high'].iloc[i] > df['high'].iloc[i+j] for j in range(1, 5))
+            if is_high and df['rvol'].iloc[i] > Config.LIQUIDITY_VOL_THRESHOLD:
+                pools.append({"price": df['high'].iloc[i], "type": "BUY_SIDE_LIQUIDITY"})
+                
+            is_low = all(df['low'].iloc[i] < df['low'].iloc[i-j] for j in range(1, 5)) and \
+                     all(df['low'].iloc[i] < df['low'].iloc[i+j] for j in range(1, 5))
+            if is_low and df['rvol'].iloc[i] > Config.LIQUIDITY_VOL_THRESHOLD:
+                pools.append({"price": df['low'].iloc[i], "type": "SELL_SIDE_LIQUIDITY"})
+                
+        return pools
+
 class MarketRegimeIntelligence:
     @staticmethod
     def get_current_regime(bars):

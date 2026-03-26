@@ -11,13 +11,65 @@ from broker_base import BrokerBase
 
 class AlpacaBroker(BrokerBase):
     def __init__(self, key=None, secret=None, paper=None):
+        from alpaca.trading.client import TradingClient
+        from alpaca.data.historical import StockHistoricalDataClient
+        
         self.client = TradingClient(
             key or Config.get_alpaca_key(),
             secret or Config.get_alpaca_secret(),
             paper=paper if paper is not None else Config.ALPACA_PAPER,
         )
+        self.data_client = StockHistoricalDataClient(
+            key or Config.get_alpaca_key(),
+            secret or Config.get_alpaca_secret()
+        )
+
+    def get_latest_quote(self, symbol: str):
+        try:
+            from alpaca.data.requests import StockLatestQuoteRequest
+            req = StockLatestQuoteRequest(symbol_or_symbols=symbol, feed=Config.ALPACA_DATA_FEED)
+            return self.data_client.get_stock_latest_quote(req)[symbol]
+        except Exception as e:
+            print(f"Error fetching latest quote for {symbol}: {e}")
+            return None
+
+    def get_latest_mid_price(self, symbol: str) -> float | None:
+        quote = self.get_latest_quote(symbol)
+        if quote:
+            return (quote.ask_price + quote.bid_price) / 2
+        return None
+
+    def get_historical_bars(self, symbol: str, start: str, end: str, timeframe: str = "1Min"):
+        from alpaca.data.requests import StockBarsRequest
+        from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+        
+        tf_map = {
+            "1Min": TimeFrame(1, TimeFrameUnit.Minute),
+            "5Min": TimeFrame(5, TimeFrameUnit.Minute),
+            "15Min": TimeFrame(15, TimeFrameUnit.Minute),
+            "1Hour": TimeFrame(1, TimeFrameUnit.Hour),
+            "1Day": TimeFrame(1, TimeFrameUnit.Day)
+        }
+        
+        tf = tf_map.get(timeframe, TimeFrame(1, TimeFrameUnit.Minute))
+        
+        req = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=tf,
+            start=start,
+            end=end,
+            feed=Config.ALPACA_DATA_FEED
+        )
+        return self.data_client.get_stock_bars(req).df
 
     def buy(self, symbol: str, qty: float, limit_price: float | None = None, stop_price: float | None = None, stop_limit_price: float | None = None, stop_loss_price: float | None = None, take_profit_price: float | None = None, trailing_stop_pct: float | None = None, extended_hours: bool = False):
+        if Config.ENABLE_OMNISCIENT_EXECUTION and not limit_price and not stop_price:
+            # Use mid-price limit for market orders to avoid slippage
+            mid = self.get_latest_mid_price(symbol)
+            if mid:
+                limit_price = mid * 1.0005 # Slight offset to ensure fill but prevent slippage
+                print(f"OMNISCIENT: Using mid-price limit {limit_price} for {symbol}")
+
         is_crypto = "/" in symbol or any(c in symbol for c in ["BTC", "ETH", "SOL", "LTC"])
         tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
         
