@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import pandas as pd
+import json
 from datetime import datetime
 
 from config import Config
@@ -162,6 +163,16 @@ class Strategy:
 
     @staticmethod
     def should_buy(bars, dynamic_config: dict | None = None, active_strategies: list | None = None, symbol: str = "") -> tuple[bool, str, float, dict]:
+        # Ultimate Bot: Load optimized params if available
+        if dynamic_config is None:
+            dynamic_config = {}
+            if os.path.exists(Config.OPTIMIZED_PARAMS_FILE):
+                try:
+                    with open(Config.OPTIMIZED_PARAMS_FILE, 'r') as f:
+                        dynamic_config.update(json.load(f))
+                except:
+                    pass
+
         df = Strategy._calculate_indicators(bars)
         if df is None:
             return False, "not enough bars", 0.0, {}
@@ -181,16 +192,6 @@ class Strategy:
         scores = ConfidenceEngine.calculate_scores(bars, "CONFLUENCE", rm)
         trade_score = scores.get("trade", 0)
         
-        if trade_score < Config.MIN_TRADE_SCORE_THRESHOLD:
-            return False, f"Trade score too low: {trade_score}", 0.0, last_indicators
-
-        # ELITE FEATURE: 'Whale Watcher' (Order Flow Filter)
-        if last.get('whale_sell_wall') and not last.get('whale_buy_wall'):
-            return False, "Institutional Sell Wall detected (Whale Watcher)", 0.0, last_indicators
-
-        if not Strategy.is_news_safe(symbol, None, bars=bars):
-            return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
-
         volatility_excessive = last['atr14'] > (last['close'] * 0.005)  # Adjusted threshold for volatility
         last_candle_green = last['close'] > prev['close']
         
@@ -198,6 +199,36 @@ class Strategy:
         now_hhmm = int(datetime.now().strftime("%H%M"))
         is_after_hours = now_hhmm > 1600 or now_hhmm < 930
 
+        min_rvol_base = 3.0 if is_after_hours else 1.8
+        
+        from intelligence import MarketRegimeIntelligence
+        regime = MarketRegimeIntelligence.get_current_regime(bars)
+        
+        # 1. Market Regime Filters (Ultimate Bot Layer)
+        if "CHOP" in regime:
+            # Only allow specific mean-reversion or scalping strategies in chop
+            allowed_in_chop = ["SCALPING", "RSI", "BOLLINGER"]
+            active = [s for s in active if s in allowed_in_chop]
+            if not active:
+                return False, f"Market regime is {regime}, no suitable active strategies", 0.0, last_indicators
+
+        if "LOW_LIQUIDITY" in regime:
+            # Tighten RVOL requirements in low liquidity
+            min_rvol_base *= 1.5
+
+        if "TRENDING_BEAR" in regime and "TREND" in active:
+            # Don't buy in a strong bear trend unless it's a deep reversal
+            if not ("RSI" in active and last['rsi14'] < 25):
+                return False, f"Market regime is {regime}, trend-following buys disabled", 0.0, last_indicators
+
+        # 2. Institutional Flow & News
+        if last.get('whale_sell_wall') and not last.get('whale_buy_wall'):
+            return False, "Institutional Sell Wall detected (Whale Watcher)", 0.0, last_indicators
+
+        if not Strategy.is_news_safe(symbol, None, bars=bars):
+            return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators
+
+        volatility_excessive = last['atr14'] > (last['close'] * 0.005)  # Adjusted threshold for volatility
         min_close_relative = 0.85 if is_after_hours else 0.8
         close_relative_pos = (last['close'] - last['low']) / (last['high'] - last['low']) if (last['high'] - last['low']) > 0 else 0
         

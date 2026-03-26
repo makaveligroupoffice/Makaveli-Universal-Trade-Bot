@@ -8,16 +8,9 @@ import io
 import csv
 import threading
 from flask import Flask, render_template, jsonify, send_from_directory, send_file, request, redirect, url_for
-from flask_login import current_user
+from flask_login import current_user, login_required
+from flask_login import login_required as login_req
 
-def login_required(f):
-    from functools import wraps
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            return redirect(url_for('login', next=request.url))
-        return f(*args, **kwargs)
-    return decorated_function
 from config import Config
 from broker_alpaca import AlpacaBroker
 from risk import RiskManager
@@ -46,6 +39,7 @@ def service_worker():
     return send_from_directory("static", "sw.js")
 
 @app.route("/api/stats")
+@login_required
 def get_stats():
     try:
         # Load broker and risk data
@@ -120,6 +114,7 @@ def get_stats():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/license/check", methods=["POST"])
+@login_required
 def check_license_now():
     """Manually triggers a license check."""
     try:
@@ -139,6 +134,7 @@ def check_license_now():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/authorize", methods=["POST"])
+@login_required
 def authorize_bot():
     try:
         data = request.json or {}
@@ -200,6 +196,7 @@ def authorize_bot():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/rotate-token", methods=["POST"])
+@login_required
 def rotate_token():
     """Generates a new random token and updates the auth file."""
     try:
@@ -222,6 +219,7 @@ def rotate_token():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/learn-youtube", methods=["POST"])
+@login_required
 def learn_youtube():
     try:
         data = request.json or {}
@@ -255,6 +253,7 @@ def learn_youtube():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/reading-session", methods=["POST"])
+@login_required
 def reading_session():
     try:
         data = request.json or {}
@@ -275,6 +274,7 @@ def reading_session():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/withdraw-profits", methods=["POST"])
+@login_required
 def withdraw_profits():
     """Manual trigger to withdraw profits to a linked bank account."""
     try:
@@ -314,6 +314,7 @@ def withdraw_profits():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/kill", methods=["POST"])
+@login_required
 def kill_switch():
     try:
         data = request.json or {}
@@ -362,6 +363,7 @@ def kill_switch():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/invest-crypto", methods=["POST"])
+@login_required
 def invest_crypto():
     data = request.json
     if not data or data.get("token") != Config.AUTH_TOKEN:
@@ -387,6 +389,7 @@ def restrict_ip():
             return jsonify({"ok": False, "error": "IP Forbidden"}), 403
 
 @app.route("/api/bot/audit-trail")
+@login_required
 def get_audit_trail():
     try:
         from bot_state import BotStateStore
@@ -396,6 +399,7 @@ def get_audit_trail():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/bot/toggle", methods=["POST"])
+@login_required
 def toggle_bot():
     try:
         from bot_state import BotStateStore
@@ -414,7 +418,7 @@ def toggle_bot():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route('/api/bot/setup-grid', methods=['POST'])
-@login_required
+@login_req
 def setup_grid():
     data = request.get_json()
     symbol = data.get('symbol')
@@ -438,7 +442,7 @@ def setup_grid():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/bot/sentiment', methods=['GET'])
-@login_required
+@login_req
 def get_sentiment():
     symbol = request.args.get('symbol', 'SPY')
     try:
@@ -450,6 +454,7 @@ def get_sentiment():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/download/journal")
+@login_required
 def download_journal():
     try:
         output = io.StringIO()
@@ -481,6 +486,7 @@ def download_journal():
         return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/download/bot")
+@login_required
 def download_bot():
     try:
         memory_file = io.BytesIO()

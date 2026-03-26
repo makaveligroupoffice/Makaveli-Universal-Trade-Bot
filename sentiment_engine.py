@@ -48,13 +48,29 @@ class SentimentEngine:
         return [n.headline for n in news] if news else []
 
     def _parse_sentiment_score(self, report: str) -> float:
-        """Heuristic to convert AI text report to a float score."""
+        """Enhanced heuristic to convert AI text report to a float score."""
         report_lower = report.lower()
+        
+        # Look for explicit numeric scores in AI output
+        import re
+        score_match = re.search(r"score:\s*(-?\d+\.?\d*)", report_lower)
+        if score_match:
+            return float(score_match.group(1))
+
         score = 0.0
-        if "bullish" in report_lower or "greed" in report_lower: score += 0.5
-        if "very bullish" in report_lower or "extreme greed" in report_lower: score += 0.4
-        if "bearish" in report_lower or "fear" in report_lower: score -= 0.5
-        if "very bearish" in report_lower or "extreme fear" in report_lower: score -= 0.4
+        # Positive sentiment weights
+        pos_terms = ["bullish", "greed", "optimism", "growth", "strong", "outperform", "buy", "upgraded"]
+        for term in pos_terms:
+            if term in report_lower: score += 0.2
+            
+        # Negative sentiment weights
+        neg_terms = ["bearish", "fear", "pessimism", "decline", "weak", "underperform", "sell", "downgraded"]
+        for term in neg_terms:
+            if term in report_lower: score -= 0.2
+            
+        # Intensifiers
+        if "very" in report_lower or "extreme" in report_lower:
+            score *= 1.5
         
         # Clamp between -1 and 1
         return max(-1.0, min(1.0, score))

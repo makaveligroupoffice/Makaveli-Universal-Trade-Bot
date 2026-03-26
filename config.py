@@ -36,18 +36,18 @@ class Config:
     LIVE_MODE_ENABLED: bool = os.getenv("LIVE_MODE_ENABLED", "false").lower() == "true"
     LIVE_TRADING_ACKNOWLEDGED: str = os.getenv("LIVE_TRADING_ACKNOWLEDGED", "")
 
-    # Active Key Selection (Dynamic)
-    @property
-    def ALPACA_KEY(self) -> str:
-        return self.ALPACA_PAPER_KEY if self.ALPACA_PAPER else self.ALPACA_LIVE_KEY
+    # Active Key Selection (Dynamic Methods)
+    @classmethod
+    def get_alpaca_key(cls) -> str:
+        return cls.ALPACA_PAPER_KEY if cls.ALPACA_PAPER else cls.ALPACA_LIVE_KEY
 
-    @property
-    def ALPACA_SECRET(self) -> str:
-        return self.ALPACA_PAPER_SECRET if self.ALPACA_PAPER else self.ALPACA_LIVE_SECRET
+    @classmethod
+    def get_alpaca_secret(cls) -> str:
+        return cls.ALPACA_PAPER_SECRET if cls.ALPACA_PAPER else cls.ALPACA_LIVE_SECRET
 
-    @property
-    def ALPACA_BASE_URL(self) -> str:
-        return "https://paper-api.alpaca.markets" if self.ALPACA_PAPER else "https://api.alpaca.markets"
+    @classmethod
+    def get_alpaca_base_url(cls) -> str:
+        return "https://paper-api.alpaca.markets" if cls.ALPACA_PAPER else "https://api.alpaca.markets"
 
     # CRISIS MODE
     AUTO_HEDGE_ENABLED: bool = os.getenv("AUTO_HEDGE_ENABLED", "true").lower() == "true"
@@ -109,6 +109,11 @@ class Config:
     ENABLE_NEW_ENTRIES: bool = os.getenv("ENABLE_NEW_ENTRIES", "true").lower() == "true"
     USE_LIMIT_ORDERS: bool = os.getenv("USE_LIMIT_ORDERS", "true").lower() == "true"
     LIMIT_OFFSET_PCT: float = float(os.getenv("LIMIT_OFFSET_PCT", "0.01"))
+    
+    # Ultimate Bot - Self Optimization
+    ENABLE_STRATEGY_OPTIMIZATION: bool = os.getenv("ENABLE_STRATEGY_OPTIMIZATION", "true").lower() == "true"
+    OPTIMIZATION_INTERVAL_DAYS: int = int(os.getenv("OPTIMIZATION_INTERVAL_DAYS", "7"))
+    OPTIMIZED_PARAMS_FILE: str = "logs/optimized_params.json"
     MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.15")) # Tightened from 0.20
     ORDER_TIMEOUT_SECONDS: int = int(os.getenv("ORDER_TIMEOUT_SECONDS", "120"))
     MAX_CONSECUTIVE_FAILURES: int = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "5"))

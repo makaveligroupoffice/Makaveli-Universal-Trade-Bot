@@ -12,8 +12,8 @@ from broker_base import BrokerBase
 class AlpacaBroker(BrokerBase):
     def __init__(self, key=None, secret=None, paper=None):
         self.client = TradingClient(
-            key or Config.ALPACA_KEY,
-            secret or Config.ALPACA_SECRET,
+            key or Config.get_alpaca_key(),
+            secret or Config.get_alpaca_secret(),
             paper=paper if paper is not None else Config.ALPACA_PAPER,
         )
 
@@ -389,7 +389,7 @@ class AlpacaBroker(BrokerBase):
         """
         import requests
         
-        endpoint = f"{Config.ALPACA_BASE_URL.replace('paper-api', 'api')}/v2/transfers"
+        endpoint = f"{Config.get_alpaca_base_url().replace('paper-api', 'api')}/v2/transfers"
         
         headers = {
             "APCA-API-KEY-ID": self.client._api_key,

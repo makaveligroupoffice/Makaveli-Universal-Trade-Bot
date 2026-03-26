@@ -17,16 +17,16 @@ from config import Config
 class MarketDataClient:
     def __init__(self):
         self.client = StockHistoricalDataClient(
-            Config.ALPACA_KEY,
-            Config.ALPACA_SECRET,
+            Config.get_alpaca_key(),
+            Config.get_alpaca_secret(),
         )
         self.option_client = OptionHistoricalDataClient(
-            Config.ALPACA_KEY,
-            Config.ALPACA_SECRET,
+            Config.get_alpaca_key(),
+            Config.get_alpaca_secret(),
         )
         self.crypto_client = CryptoHistoricalDataClient(
-            Config.ALPACA_KEY,
-            Config.ALPACA_SECRET,
+            Config.get_alpaca_key(),
+            Config.get_alpaca_secret(),
         )
 
     def get_bars_for_research(self, symbol: str, days: int = 3):
@@ -193,7 +193,7 @@ class MarketDataClient:
         from alpaca.data.requests import NewsRequest
         from alpaca.data.historical import NewsClient
         
-        client = NewsClient(Config.ALPACA_KEY, Config.ALPACA_SECRET)
+        client = NewsClient(Config.get_alpaca_key(), Config.get_alpaca_secret())
         
         start = datetime.now(UTC) - timedelta(days=days)
         request = NewsRequest(
