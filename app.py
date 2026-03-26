@@ -7,8 +7,17 @@ import zipfile
 import io
 import csv
 import threading
-from flask import Flask, render_template, jsonify, send_from_directory, send_file, request
+from flask import Flask, render_template, jsonify, send_from_directory, send_file, request, redirect, url_for
 from flask_login import current_user
+
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
 from config import Config
 from broker_alpaca import AlpacaBroker
 from risk import RiskManager
@@ -403,6 +412,42 @@ def toggle_bot():
     except Exception as e:
         logger.error(f"Error toggling bot: {e}")
         return jsonify({"ok": False, "error": str(e)})
+
+@app.route('/api/bot/setup-grid', methods=['POST'])
+@login_required
+def setup_grid():
+    data = request.get_json()
+    symbol = data.get('symbol')
+    price = data.get('price')
+    token = data.get('token')
+    
+    if token != Config.AUTH_TOKEN:
+        return jsonify({"status": "error", "message": "Invalid Master Token"}), 403
+        
+    if not symbol or not price:
+        return jsonify({"status": "error", "message": "Symbol and Price required"}), 400
+        
+    try:
+        from broker_alpaca import AlpacaBroker
+        from multi_bot import MultiBotManager
+        broker = AlpacaBroker()
+        manager = MultiBotManager(broker)
+        manager.grid_trader.setup_grid(symbol, float(price))
+        return jsonify({"status": "success", "message": f"Grid setup for {symbol}"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/bot/sentiment', methods=['GET'])
+@login_required
+def get_sentiment():
+    symbol = request.args.get('symbol', 'SPY')
+    try:
+        from sentiment_engine import SentimentEngine
+        engine = SentimentEngine()
+        score = engine.get_market_sentiment(symbol)
+        return jsonify({"status": "success", "symbol": symbol, "sentiment": score})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/download/journal")
 def download_journal():

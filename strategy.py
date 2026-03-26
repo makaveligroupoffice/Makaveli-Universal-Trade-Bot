@@ -124,13 +124,11 @@ class Strategy:
         df['supertrend_bull'] = (df['close'] > df['supertrend'])
 
         # --- ELITE FEATURE: 'Whale Watcher' (Order Flow Imbalance) ---
-        # Approximates buying vs selling pressure using candle wicks and volume
         df['buying_pressure'] = (df['close'] - df['low']) / (df['high'] - df['low']) * df['volume']
         df['selling_pressure'] = (df['high'] - df['close']) / (df['high'] - df['low']) * df['volume']
         df['pressure_delta'] = df['buying_pressure'] - df['selling_pressure']
         df['pressure_delta_ema'] = df['pressure_delta'].ewm(span=14, adjust=False).mean()
         
-        # Identify "Institutional Walls" (Volume delta > 2x average)
         df['avg_delta'] = df['pressure_delta'].abs().rolling(20).mean()
         df['whale_buy_wall'] = (df['pressure_delta'] > 0) & (df['pressure_delta'] > df['avg_delta'] * 2)
         df['whale_sell_wall'] = (df['pressure_delta'] < 0) & (df['pressure_delta'].abs() > df['avg_delta'] * 2)
@@ -251,7 +249,7 @@ class Strategy:
 
         mom_match = False
         if "RSI" in active:
-            if last['rsi14'] < 35 and last_candle_green:  # Adjusted RSI threshold for oversold
+            if last['rsi14'] < 30 and last_candle_green:  # Adjusted RSI threshold for oversold
                 matches.append("RSI_OVERSOLD")
                 strength_score += 0.4
                 mom_match = True

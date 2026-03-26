@@ -45,6 +45,10 @@
                 <span class="text-gray-500 uppercase">Whale Sentiment</span>
                 <span id="whaleValue" class="text-white">NEUTRAL (0.0)</span>
             </div>
+            <div class="flex flex-col items-center">
+                <span class="text-gray-500 uppercase">Market Sentiment</span>
+                <span id="marketSentiment" class="text-blue-400">NEUTRAL (0.0)</span>
+            </div>
             <div class="flex flex-col text-right">
                 <span class="text-gray-500 uppercase">Hedge Status</span>
                 <span id="hedgeStatus" class="text-green-400">INACTIVE</span>
@@ -145,6 +149,7 @@
 
         <!-- AI & Strategy Learning -->
         <div class="mt-6 grid grid-cols-1 gap-4 mb-2">
+            <button onclick="setupGridTrader()" class="cyber-panel bg-cyan-900 bg-opacity-20 hover:bg-opacity-40 border-cyan-500 p-3 rounded uppercase font-bold text-xs transition-all text-cyan-400">Setup Grid Trader (Chop Mode)</button>
             <button onclick="investCrypto()" class="cyber-panel bg-orange-900 bg-opacity-20 hover:bg-opacity-40 border-orange-500 p-3 rounded uppercase font-bold text-xs transition-all text-orange-400">Scan & Invest Crypto (Long-Term)</button>
             <button onclick="deepReadingSession()" class="cyber-panel bg-yellow-900 bg-opacity-20 hover:bg-opacity-40 border-yellow-500 p-3 rounded uppercase font-bold text-xs transition-all text-yellow-400">Deep Reading Session (25+ Books)</button>
             <button onclick="learnFromYoutube()" class="cyber-panel bg-blue-900 bg-opacity-20 hover:bg-opacity-40 border-blue-500 p-3 rounded uppercase font-bold text-xs transition-all text-blue-400">Feed YouTube Strategy</button>

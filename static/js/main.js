@@ -109,6 +109,26 @@ function updateStats() {
                     hedgeStatus.className = 'text-green-400';
                 }
 
+                // Update Market Sentiment
+                const marketSent = document.getElementById('marketSentiment');
+                if (marketSent) {
+                    fetch('/api/bot/sentiment?symbol=SPY')
+                        .then(res => res.json())
+                        .then(sdata => {
+                            if (sdata.status === 'success') {
+                                const s = sdata.sentiment;
+                                let label = 'NEUTRAL';
+                                let color = 'text-blue-400';
+                                if (s > 0.6) { label = 'GREED'; color = 'text-green-400'; }
+                                else if (s > 0.2) { label = 'OPTIMISTIC'; color = 'text-green-200'; }
+                                else if (s < -0.6) { label = 'EXTREME FEAR'; color = 'text-red-500 glitch-text'; }
+                                else if (s < -0.2) { label = 'FEAR'; color = 'text-red-400'; }
+                                marketSent.innerText = `${label} (${s.toFixed(2)})`;
+                                marketSent.className = `font-bold ${color}`;
+                            }
+                        });
+                }
+
                 // Update License Alert
                 const licenseAlert = document.getElementById('licenseAlert');
                 if (data.license_revoked) {
@@ -298,6 +318,31 @@ function deepReadingSession() {
             log.innerHTML += `> SERVER: ${data.message}<br>`;
         } else {
             log.innerHTML += `> SERVER ERROR: ${data.error}<br>`;
+        }
+        log.scrollTop = log.scrollHeight;
+    });
+}
+
+function setupGridTrader() {
+    const symbol = prompt('Enter symbol for Grid Trading (e.g. BTC/USD, SPY):');
+    if (!symbol) return;
+    const price = prompt('Enter base price for Grid levels:');
+    if (!price) return;
+    const token = prompt('Enter Master Token to authorize Grid Setup:');
+    if (!token) return;
+
+    const log = document.getElementById('logFeed');
+    log.innerHTML += `> SETTING UP GRID FOR ${symbol} @ ${price}...<br>`;
+
+    fetch('/api/bot/setup-grid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: symbol, price: price, token: token })
+    }).then(res => res.json()).then(data => {
+        if (data.status === 'success') {
+            log.innerHTML += `<span class="text-green-400 font-bold">> SUCCESS: ${data.message}</span><br>`;
+        } else {
+            log.innerHTML += `<span class="text-red-400 font-bold">> ERROR: ${data.message}</span><br>`;
         }
         log.scrollTop = log.scrollHeight;
     });
