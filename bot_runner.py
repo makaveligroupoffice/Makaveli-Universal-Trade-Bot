@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import logging
@@ -7,6 +8,7 @@ import os
 import sys
 import time
 from datetime import datetime
+from typing import Dict, List, Optional, Any, Tuple
 
 from flask import Flask
 
@@ -360,6 +362,106 @@ class AutoTrader:
     @staticmethod
     def _now_ts() -> float:
         return time.time()
+
+    async def _async_evaluate_symbol_entry(self, symbol: str, momentum: float, current_hhmm: int, total_at_risk: float, current_equity: float):
+        """Asynchronous wrapper for evaluating a single symbol for entry."""
+        return await asyncio.to_thread(self._evaluate_symbol_entry, symbol, momentum, current_hhmm, total_at_risk, current_equity)
+
+    def _evaluate_symbol_entry(self, symbol: str, momentum: float, current_hhmm: int, total_at_risk: float, current_equity: float):
+        """
+        Evaluates a single symbol for entry logic. 
+        Extracted from the main loop to support parallel execution.
+        """
+        try:
+            # Check if there is already a pending order for this symbol
+            if any(info.get("symbol") == symbol for info in self.pending_orders.values()):
+                return symbol, None, "Pending order exists", 0.0, {}
+
+            allowed, live_reason = self._symbol_allowed_for_live(symbol)
+            if not allowed:
+                return symbol, None, f"Not allowed: {live_reason}", 0.0, {}
+
+            spread_pct = self.data.get_spread_pct(symbol)
+            max_spread = self.dynamic_config.get("max_spread_pct", Config.MAX_SPREAD_PCT)
+            if spread_pct is None or spread_pct > max_spread:
+                return symbol, None, f"Spread too wide: {spread_pct:.4%}", 0.0, {}
+
+            # Scaling timeframe for multi-bot
+            lookback_minutes = 30
+            if self.timeframe == "15Min": lookback_minutes = 150
+            elif self.timeframe == "5Min": lookback_minutes = 75
+            
+            bars = self.data.get_recent_bars(symbol, minutes=lookback_minutes)
+            if not bars:
+                return symbol, None, "No bar data", 0.0, {}
+
+            # Sector/Diversity Check
+            if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, symbol=symbol, current_equity=current_equity, total_at_risk=total_at_risk, timeframe=self.timeframe, bars=bars):
+                return symbol, None, "Risk limit reached", 0.0, {}
+
+            # --- Number One Bot: Fetch Multi-Timeframe Bars ---
+            mtf_bars = {}
+            if Config.ENABLE_FRACTAL_MTF:
+                for tf in Config.MTF_TIMEFRAMES:
+                    if tf == "1Min":
+                        mtf_bars[tf] = bars
+                    else:
+                        tf_unit = int(tf.replace("Min", ""))
+                        tf_minutes = tf_unit * 100
+                        tf_bars = self.data.get_historical_bars(symbol, minutes=tf_minutes, timeframe=tf)
+                        if tf_bars:
+                            mtf_bars[tf] = tf_bars
+
+            # News Awareness Filter
+            if Config.ENABLE_NEWS_FILTER:
+                news = self.data.get_news(symbol, days=1)
+                if not self.strategy.is_news_safe(symbol, self.data, news_list=news):
+                    return symbol, None, "News unsafe", 0.0, {}
+
+            should_buy, buy_reason, buy_strength, buy_indicators = self.strategy.should_buy(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol, mtf_bars=mtf_bars)
+            should_short, short_reason, short_strength, short_indicators = self.strategy.should_short(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol)
+            
+            action = None
+            reason = None
+            strength = 0.0
+            indicators = {}
+            is_partial_entry = False
+
+            # Partial Entry Support (Scaling in)
+            if symbol in self.positions:
+                if not Config.ENABLE_PARTIAL_ENTRIES:
+                    return symbol, None, "Partial entries disabled", 0.0, {}, False
+                
+                pos_info = self.positions[symbol]
+                if pos_info.get("side") == "buy" and momentum > 0:
+                     entry_price = pos_info.get("entry_price", 0)
+                     latest_price = self.data.get_latest_mid_price(symbol)
+                     if latest_price and latest_price > entry_price * 1.01:
+                         is_partial_entry = True
+                elif pos_info.get("side") == "short" and momentum < 0:
+                     entry_price = pos_info.get("entry_price", 0)
+                     latest_price = self.data.get_latest_mid_price(symbol)
+                     if latest_price and latest_price < entry_price * 0.99:
+                         is_partial_entry = True
+                
+                if not is_partial_entry:
+                    return symbol, None, "Not ready to scale in", 0.0, {}, False
+
+            if should_buy:
+                action = "buy"
+                reason = buy_reason
+                strength = buy_strength
+                indicators = buy_indicators
+            elif should_short:
+                action = "short"
+                reason = short_reason
+                strength = short_strength
+                indicators = short_indicators
+
+            return symbol, action, reason, strength, indicators, is_partial_entry
+        except Exception as e:
+            log.error(f"Error evaluating {symbol}: {e}")
+            return symbol, None, str(e), 0.0, {}, False
 
     def _monitor_manual_trades(self):
         """Fetches recent orders from Alpaca and identifies manual trades to learn from."""
@@ -879,116 +981,55 @@ class AutoTrader:
             + ", ".join(f"{symbol}={momentum:.4%}" for symbol, momentum in ranked_candidates)
         )
 
-        for symbol, momentum in ranked_candidates:
-            # 5. Partial Entry Support (Scaling in)
-            is_partial_entry = False
-            if symbol in self.positions:
-                if not Config.ENABLE_PARTIAL_ENTRIES:
-                    continue
-                
-                pos_info = self.positions[symbol]
-                # Only scale in if the position is already profitable and we haven't scaled in too many times
-                if pos_info.get("side") == "buy" and momentum > 0:
-                     # Check profitability
-                     entry_price = pos_info.get("entry_price", 0)
-                     latest_price = self.data.get_latest_mid_price(symbol)
-                     if latest_price and latest_price > entry_price * 1.01: # 1% profit minimum to scale in
-                         is_partial_entry = True
-                elif pos_info.get("side") == "short" and momentum < 0:
-                     entry_price = pos_info.get("entry_price", 0)
-                     latest_price = self.data.get_latest_mid_price(symbol)
-                     if latest_price and latest_price < entry_price * 0.99: # 1% profit minimum to scale in
-                         is_partial_entry = True
-                
-                if not is_partial_entry:
-                    continue
+        # Speed Optimization: Parallel Candidate Evaluation
+        eval_tasks = []
+        # Limit the number of candidates we evaluate in parallel for speed and API limits
+        max_eval = getattr(Config, "MAX_CANDIDATE_EVALUATION", 20)
+        candidates_to_eval = ranked_candidates[:max_eval]
+
+        async def evaluate_all():
+            tasks = [self._async_evaluate_symbol_entry(s, m, current_hhmm, total_at_risk, current_equity) for s, m in candidates_to_eval]
+            return await asyncio.gather(*tasks)
+
+        try:
+            eval_results = asyncio.run(evaluate_all())
+        except Exception as e:
+            log.error(f"Error in parallel entry evaluation: {e}")
+            eval_results = []
+
+        for symbol, action, reason, strength, last_indicators, is_partial_entry in eval_results:
+            if action is None:
+                continue
+
+            momentum = next((m for s, m in candidates_to_eval if s == symbol), 0.0)
             
-            # Check if there is already a pending order for this symbol
-            if any(info.get("symbol") == symbol for info in self.pending_orders.values()):
-                continue
+            # --- Continue with Entry Logic for the first successful candidate ---
+            # Re-check limits before each entry execution
+            open_positions_count = self.broker.get_open_positions_count()
+            if open_positions_count >= Config.MAX_OPEN_POSITIONS:
+                log.info(f"Max open positions reached ({open_positions_count}) during parallel execution")
+                break
 
-            # 5. Sector/Diversity Check
-            if not self.risk.can_trade(is_exit=False, current_hhmm=current_hhmm, symbol=symbol, current_equity=current_equity, bars=bars, total_at_risk=total_at_risk, timeframe=self.timeframe):
-                log.info(f"Skipping {symbol}: Sector/Crisis/Risk limit reached.")
-                continue
+            # ... existing entry execution logic follows ...
 
+            # bars is now fetched within _evaluate_symbol_entry, so we don't need to re-fetch most things.
+            # But we check account limits again as they might have changed between parallel evals
+            account = self.broker.get_account()
+            current_equity = float(getattr(account, "equity", Config.STARTING_EQUITY))
+            
             allowed, live_reason = self._symbol_allowed_for_live(symbol)
             if not allowed:
                 continue
 
-            spread_pct = self.data.get_spread_pct(symbol)
-            max_spread = self.dynamic_config.get("max_spread_pct", Config.MAX_SPREAD_PCT)
-            if spread_pct is None or spread_pct > max_spread:
-                continue
-
-            # Scaling timeframe for multi-bot
+            # We need bars for the remaining logic below (like _calc_qty if it uses ATR)
+            # Fetching once more is fast if cached or using latest_price
             lookback_minutes = 30
             if self.timeframe == "15Min": lookback_minutes = 150
             elif self.timeframe == "5Min": lookback_minutes = 75
-            
             bars = self.data.get_recent_bars(symbol, minutes=lookback_minutes)
-            if not bars:
-                continue
             
-            # --- Number One Bot: Fetch Multi-Timeframe Bars ---
-            mtf_bars = {}
-            if Config.ENABLE_FRACTAL_MTF:
-                for tf in Config.MTF_TIMEFRAMES:
-                    if tf == "1Min":
-                        mtf_bars[tf] = bars
-                    else:
-                        # Estimate minutes needed for 100 bars of this timeframe
-                        tf_unit = int(tf.replace("Min", ""))
-                        tf_minutes = tf_unit * 100
-                        tf_bars = self.data.get_historical_bars(symbol, minutes=tf_minutes, timeframe=tf)
-                        if tf_bars is not None:
-                            mtf_bars[tf] = tf_bars
-
-            # News Awareness Filter
-            if Config.ENABLE_NEWS_FILTER:
-                news = self.data.get_news(symbol, days=1)
-                # 1. Rule-based filter
-                if not self.strategy.is_news_safe(symbol, self.data, news_list=news):
-                    log.info(f"Skipping {symbol}: high-impact news or excessive volatility detected (Rule-based)")
-                    continue
-                
-                # 2. AI-based Sentiment Filter
-                if Config.AI_PROVIDER and Config.OPENAI_API_KEY:
-                    headlines = [n.headline for n in news]
-                    sentiment_score = self.ai.analyze_trade_sentiment(symbol, headlines)
-                    log.info(f"AI Sentiment for {symbol}: {sentiment_score:.2f}")
-                    if sentiment_score < -0.3: # Bearish threshold
-                        log.info(f"Skipping {symbol}: AI detected bearish sentiment ({sentiment_score:.2f})")
-                        continue
-
-            # Edge Decay Detection
-            from intelligence import EdgeDecayDetector
-            detector = EdgeDecayDetector()
-            decay_report = detector.analyze_decay()
-            if decay_report.get("decayed"):
-                log.warning(f"Strategy Edge Decay detected (WR: {decay_report['win_rate']:.1f}%). Throttling entries.")
-                # Automatically decrease risk
-                signal_strength *= 0.5
-
-            should_buy, buy_reason, buy_strength, buy_indicators = self.strategy.should_buy(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol, mtf_bars=mtf_bars)
-            should_short, short_reason, short_strength, short_indicators = self.strategy.should_short(bars, self.dynamic_config, active_strategies=self.strategy_active, symbol=symbol)
-            
-            action = None
-            reason = None
-            strength = 0.0
-            last_indicators = {}
-            if should_buy:
-                action = "buy"
-                reason = buy_reason
-                strength = buy_strength
-                last_indicators = buy_indicators
-            elif should_short:
-                action = "short"
-                reason = short_reason
-                strength = short_strength
-                last_indicators = short_indicators
-            
-            if not action:
+            latest_price = self.data.get_latest_mid_price(symbol)
+            if not bars or not latest_price or latest_price <= 0:
                 continue
 
             # --- Expert Tuning: Market Regime & Relative Strength ---
@@ -996,21 +1037,28 @@ class AutoTrader:
             relative_strength = symbol_30m_return - index_30m_return
             
             if market_regime == "BEARISH" and action == "buy":
-                log.info(f"Skipping {symbol}: BEARING market regime blocks long entries.")
+                log.info(f"Skipping {symbol}: BEARISH market regime blocks long entries.")
                 continue
             if market_regime == "BULLISH" and action == "short":
                 log.info(f"Skipping {symbol}: BULLISH market regime blocks short entries.")
                 continue
             
+            # Fast Path Execution: Expedite if confidence is very high
+            fast_path = False
+            if Config.FAST_PATH_ENABLED and strength >= 0.9:
+                log.info(f"🚀 FAST PATH ACTIVATED for {symbol} (Strength: {strength:.2f})")
+                fast_path = True
+            
             # Relative Strength Filtering:
             # Long: Symbol should be stronger than SPY
             # Short: Symbol should be weaker than SPY
-            if action == "buy" and relative_strength < 0.2:
-                log.info(f"Skipping {symbol}: Weak relative strength ({relative_strength:.2f}%) vs SPY.")
-                continue
-            if action == "short" and relative_strength > -0.2:
-                log.info(f"Skipping {symbol}: Weak relative weakness ({relative_strength:.2f}%) vs SPY.")
-                continue
+            if not is_partial_entry and not fast_path:
+                if action == "buy" and relative_strength < 0.2:
+                    log.info(f"Skipping {symbol}: Weak relative strength ({relative_strength:.2f}%) vs SPY.")
+                    continue
+                if action == "short" and relative_strength > -0.2:
+                    log.info(f"Skipping {symbol}: Weak relative weakness ({relative_strength:.2f}%) vs SPY.")
+                    continue
 
             # Risk/Reward Enforcement
             sl_pct = (self.dynamic_config.get("stop_loss_pct", Config.STOP_LOSS_PCT) if self.dynamic_config else Config.STOP_LOSS_PCT) / 100.0
@@ -1101,7 +1149,7 @@ class AutoTrader:
                     continue
 
             # 3. AI Signal Verification (Final Check)
-            if Config.ENABLE_AI_TRADE_FILTER:
+            if Config.ENABLE_AI_TRADE_FILTER and not fast_path:
                 # Prepare indicators for AI analysis
                 df = self.strategy._calculate_indicators(bars)
                 last_indicators = df.iloc[-1].to_dict() if df is not None else {}

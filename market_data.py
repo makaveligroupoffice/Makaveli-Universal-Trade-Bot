@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
+from typing import Dict, List, Optional, Any
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient, OptionHistoricalDataClient, CryptoHistoricalDataClient
@@ -13,6 +16,7 @@ from alpaca.data.timeframe import TimeFrame
 
 from config import Config
 
+log = logging.getLogger("tradebot")
 
 class MarketDataClient:
     def __init__(self):
@@ -28,6 +32,22 @@ class MarketDataClient:
             Config.get_alpaca_key(),
             Config.get_alpaca_secret(),
         )
+        self._cache = {}
+
+    async def async_get_recent_bars(self, symbol: str, minutes: int = 30):
+        """Asynchronous wrapper for get_recent_bars."""
+        return await asyncio.to_thread(self.get_recent_bars, symbol, minutes)
+
+    async def async_get_latest_mid_price(self, symbol: str) -> float | None:
+        """Asynchronous wrapper for get_latest_mid_price."""
+        return await asyncio.to_thread(self.get_latest_mid_price, symbol)
+
+    async def async_get_multi_bars(self, symbols: List[str], minutes: int = 30) -> Dict[str, Any]:
+        """Fetch bars for multiple symbols in parallel."""
+        tasks = [self.async_get_recent_bars(s, minutes) for s in symbols]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        return {s: r for s, r in zip(symbols, results) if not isinstance(r, Exception)}
 
     def get_bars_for_research(self, symbol: str, days: int = 3):
         """Fetch historical bars for research purposes."""

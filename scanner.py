@@ -31,8 +31,33 @@ class Scanner:
         else:
             universe = self.universe
         
-        for symbol in universe:
-            momentum = self._get_symbol_momentum(symbol)
+        # Speed Optimization: Fetch momentum in parallel using asyncio
+        import asyncio
+        
+        async def fetch_all_momentum(symbols):
+            tasks = [asyncio.to_thread(self._get_symbol_momentum, s) for s in symbols]
+            return await asyncio.gather(*tasks)
+
+        try:
+            # Use a new event loop if one isn't running, or use the existing one
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we are already in an async context (like the new bot_runner might be)
+                    # we should ideally await this, but Scanner is currently sync.
+                    # For now, we'll use a thread to run the parallel fetch to not block.
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        momentums = executor.submit(lambda: asyncio.run(fetch_all_momentum(universe))).result()
+                else:
+                    momentums = loop.run_until_complete(fetch_all_momentum(universe))
+            except RuntimeError:
+                momentums = asyncio.run(fetch_all_momentum(universe))
+        except Exception as e:
+            log.error(f"Error in parallel momentum fetch: {e}")
+            momentums = [self._get_symbol_momentum(s) for s in universe]
+
+        for symbol, momentum in zip(universe, momentums):
             if momentum is None:
                 continue
             

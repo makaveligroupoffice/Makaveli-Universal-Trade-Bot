@@ -110,11 +110,17 @@ class Config:
     USE_LIMIT_ORDERS: bool = os.getenv("USE_LIMIT_ORDERS", "true").lower() == "true"
     LIMIT_OFFSET_PCT: float = float(os.getenv("LIMIT_OFFSET_PCT", "0.01"))
     
+    # Execution Speed & Optimization
+    PARALLEL_SCAN_THREADS: int = int(os.getenv("PARALLEL_SCAN_THREADS", "10"))
+    ASYNC_EXECUTION_ENABLED: bool = os.getenv("ASYNC_EXECUTION_ENABLED", "true").lower() == "true"
+    FAST_PATH_ENABLED: bool = os.getenv("FAST_PATH_ENABLED", "true").lower() == "true"
+    MAX_CANDIDATE_EVALUATION: int = int(os.getenv("MAX_CANDIDATE_EVALUATION", "20")) # Limit expensive evaluations
+    DATA_CACHE_TTL_SECONDS: int = int(os.getenv("DATA_CACHE_TTL_SECONDS", "5")) # Cache market data for very short time
+    
     # Ultimate Bot - Self Optimization
     ENABLE_STRATEGY_OPTIMIZATION: bool = os.getenv("ENABLE_STRATEGY_OPTIMIZATION", "true").lower() == "true"
     OPTIMIZATION_INTERVAL_DAYS: int = int(os.getenv("OPTIMIZATION_INTERVAL_DAYS", "7"))
     OPTIMIZED_PARAMS_FILE: str = "logs/optimized_params.json"
-    MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.15")) # Tightened from 0.20
     ORDER_TIMEOUT_SECONDS: int = int(os.getenv("ORDER_TIMEOUT_SECONDS", "120"))
     MAX_CONSECUTIVE_FAILURES: int = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "5"))
     AUTO_SHUTDOWN_AFTER_CLOSE: bool = os.getenv("AUTO_SHUTDOWN_AFTER_CLOSE", "true").lower() == "true"
