@@ -319,6 +319,7 @@ class LearningEngine:
         """
         Uses AI to rewrite strategy code based on performance analysis.
         This uses an autonomous self-correction pattern.
+        Enhanced with Market Context for Super Charged evolution.
         """
         if not Config.ENABLE_AI_EVOLUTION:
             log.info("AI evolution disabled. Skipping code evolution.")
@@ -330,8 +331,22 @@ class LearningEngine:
             with open("strategy.py", "r") as f:
                 current_code = f.read()
             
+            # Enhance report with market context
+            md = MarketDataClient()
+            spy_bars = md.get_recent_bars("SPY", minutes=1440) # 1 day context
+            vix_quote = md.get_latest_quote("VIX")
+            
+            market_summary = "MARKET CONTEXT:\n"
+            if spy_bars:
+                change = (float(spy_bars[-1].close) - float(spy_bars[0].close)) / float(spy_bars[0].close)
+                market_summary += f"- SPY Daily Change: {change:.2%}\n"
+            if vix_quote:
+                market_summary += f"- VIX: {vix_quote.ask_price}\n"
+            
+            full_report = f"{analysis_report}\n\n{market_summary}"
+            
             # Use AI to generate the evolved code
-            new_content = self.ai.generate_code_evolution(current_code, analysis_report)
+            new_content = self.ai.generate_code_evolution(current_code, full_report)
             
             if new_content and new_content != current_code:
                 # Basic sanity check: ensure 'class Strategy' is still present
@@ -339,9 +354,16 @@ class LearningEngine:
                     log.error("AI-generated code missing 'Strategy' class. Rejecting.")
                     return
 
+                # Backup before update
+                os.makedirs("backups", exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                with open(f"backups/strategy_pre_evolution_{timestamp}.py", "w") as f:
+                    f.write(current_code)
+
                 with open("strategy.py", "w") as f:
                     f.write(new_content)
-                log.info("Strategy code autonomously evolved by AI. Hot-reload will trigger.")
+                log.info("🚀 STRATEGY SUPER CHARGED: AI autonomously evolved code applied.")
+                send_notification("🤖 Bot Evolved: Strategy code updated via AI-Driven Hyper-Optimization.")
                 
                 # Automatically push the evolution to GitHub
                 try:

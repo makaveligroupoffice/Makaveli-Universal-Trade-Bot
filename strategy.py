@@ -261,9 +261,17 @@ class Strategy:
             if not ("RSI" in active and last['rsi14'] < 25):
                 return False, f"Market regime is {regime}, trend-following buys disabled", 0.0, last_indicators
 
-        # 2. Institutional Flow & News
+        # 2. Institutional Flow, Sentiment & News (Super Charged)
         if last.get('whale_sell_wall') and not last.get('whale_buy_wall'):
             return False, "Institutional Sell Wall detected (Whale Watcher)", 0.0, last_indicators
+
+        from sentiment_engine import SentimentEngine
+        se = SentimentEngine()
+        sentiment = se.get_market_sentiment(symbol)
+        
+        # Super Charged: Use Urgency and Score for real-time protection
+        if sentiment.get("score", 0.0) < -0.6 and sentiment.get("urgency", 0.0) > 0.5:
+            return False, f"SUPER CHARGED: High-Urgency Negative Sentiment ({sentiment['score']}) detected", 0.0, last_indicators
 
         if not Strategy.is_news_safe(symbol, None, bars=bars):
             return False, "Unsafe news conditions (spike or negative news detected)", 0.0, last_indicators

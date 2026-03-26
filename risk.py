@@ -196,6 +196,7 @@ class RiskManager:
         Calculates the optimal position size using the Kelly Criterion.
         Formula: K% = W - (1 - W) / R
         W = Win Rate, R = Win/Loss Ratio
+        Enhanced with VIX Volatility Scaling for Super Charged Risk Management.
         """
         if win_loss_ratio <= 0:
             return Config.RISK_PCT_PER_TRADE / 100.0
@@ -203,6 +204,23 @@ class RiskManager:
         # Standard Kelly
         kelly_pct = win_rate - (1 - win_rate) / win_loss_ratio
         
+        # Volatility Scaling (Super Charged)
+        try:
+            from market_data import MarketDataClient
+            md = MarketDataClient()
+            vix_quote = md.get_latest_quote("VIX")
+            if vix_quote:
+                vix_value = float(vix_quote.ask_price)
+                # Normal VIX is ~15-20. If VIX is high (>25), reduce size. If VIX is low (<15), increase size.
+                if vix_value > 25:
+                    vol_factor = max(0.2, 1.0 - ((vix_value - 25) / 50.0)) # Reduce size by up to 80% if VIX is 65
+                    kelly_pct *= vol_factor
+                elif vix_value < 15:
+                    vol_factor = min(1.5, 1.0 + ((15 - vix_value) / 30.0)) # Increase size by up to 50% if VIX is very low
+                    kelly_pct *= vol_factor
+        except:
+            pass
+
         # Use Fractional Kelly (usually 0.5) to be conservative
         # Profit Reinvestment / Capital Growth scaling
         if Config.AUTO_REINVEST_PROFITS:

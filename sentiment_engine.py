@@ -1,6 +1,7 @@
 import logging
 import requests
 import re
+import json
 from config import Config
 from ai_engine import AIEngine
 
@@ -15,25 +16,46 @@ class SentimentEngine:
         self.ai = AIEngine()
         self.sentiment_cache = {} # {symbol: {score, timestamp}}
 
-    def get_market_sentiment(self, symbol: str = "SPY") -> float:
+    def get_market_sentiment(self, symbol: str = "SPY") -> dict:
         """
-        Returns a sentiment score from -1.0 (Extreme Fear) to 1.0 (Extreme Greed).
+        Returns a detailed sentiment analysis including score, urgency, and trend.
+        Score: -1.0 (Extreme Fear) to 1.0 (Extreme Greed)
+        Urgency: 0.0 to 1.0
         """
-        # 1. Fetch recent headlines/social mentions (Simulated/Scraped)
+        # 1. Fetch recent headlines/social mentions
         headlines = self._fetch_headlines(symbol)
         if not headlines:
-            return 0.0 # Neutral
+            return {"score": 0.0, "urgency": 0.0, "trend": "neutral"}
 
-        # 2. Use AI to analyze sentiment of headlines
+        # 2. Use AI for deep sentiment analysis (Super Charged)
         try:
-            sentiment_report = self.ai.analyze_trade_sentiment(symbol, headlines)
-            # Extract numeric score from report if possible, or use a heuristic
-            score = self._parse_sentiment_score(sentiment_report)
-            log.info(f"Sentiment for {symbol}: {score} ({sentiment_report[:50]}...)")
-            return score
+            prompt = f"""
+            Analyze the market sentiment for {symbol} based on these headlines:
+            {headlines[:10]}
+            
+            Provide a structured JSON response with:
+            - score: float between -1.0 and 1.0
+            - urgency: float between 0.0 and 1.0 (how fast is this news moving the market)
+            - trend: string ('improving', 'deteriorating', 'stable')
+            - logic: brief explanation
+            """
+            
+            response = self.ai.client.chat.completions.create(
+                model=self.ai.model,
+                messages=[
+                    {"role": "system", "content": "You are a real-time market sentiment quantifier."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0
+            )
+            
+            analysis = json.loads(response.choices[0].message.content)
+            log.info(f"Super Charged Sentiment for {symbol}: {analysis}")
+            return analysis
         except Exception as e:
             log.error(f"Sentiment analysis failed for {symbol}: {e}")
-            return 0.0
+            return {"score": 0.0, "urgency": 0.0, "trend": "neutral"}
 
     def _fetch_headlines(self, symbol: str) -> list[str]:
         """
@@ -78,4 +100,4 @@ class SentimentEngine:
     def is_market_stable(self) -> bool:
         """Returns True if the general market sentiment is not in 'Extreme Fear'."""
         overall_sentiment = self.get_market_sentiment("SPY")
-        return overall_sentiment > -0.7
+        return overall_sentiment.get("score", 0.0) > -0.7
