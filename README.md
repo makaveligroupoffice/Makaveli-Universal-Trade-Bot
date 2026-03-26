@@ -32,8 +32,20 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
     - **Scan & Invest**: AI-driven evaluation of BTC, ETH, and SOL for long-term holding.
     - **Withdrawal Alerts**: Automatically prompts "Withdraw to Tangem" when settled assets are ready for cold storage.
 - **Multi-Bot Scaling**: 
-    - Orchestrates specialized **Scalper, Swing, and Trend Follower** bots under a Master Risk Controller.
+    - Orchestrates specialized **Scalper, Swing, Trend Follower, and Pairs Trader** bots under a Master Risk Controller.
     - **Heartbeat Monitoring**: Ensures 24/7 uptime with automated failover and error recovery.
+- **Grid Trading Engine**: 
+    - A specialized market-making system (`grid_trader.py`) that profits from sideways and choppy markets by setting automated buy/sell grids.
+- **Pairs Trading & Statistical Arbitrage**:
+    - Exploits relative value correlations between assets (e.g., SPY vs QQQ) using z-score based mean reversion logic.
+- **AI Sentiment Analysis Engine**:
+    - Scrapes and analyzes global market sentiment (`sentiment_engine.py`) to provide a "Fear & Greed" filter that auto-pauses entries during extreme panic.
+- **Backtesting Engine**:
+    - A robust historical simulator (`backtester.py`) that allows you to test any strategy against historical Alpaca data before going live.
+- **Portfolio Rebalancer**:
+    - Automatically maintains your target asset class weights (Stocks, Crypto, Bonds) and provides rebalancing suggestions to manage risk.
+- **Tax Tracking & Export**:
+    - Generates professional CSV tax reports (`tax_tracker.py`) of all closed trades, including PnL, timestamps, and execution reasons.
 - **Machine-Bound Licensing**: 
     - **Single-Use Activation**: Licenses are now bound to the specific hardware on first use, preventing unauthorized sharing or reuse.
     - **One-Time Keys**: Supports `ACT-XXXX` activation keys that automatically bind the bot to the user's machine fingerprint.
@@ -85,6 +97,11 @@ A professional-grade, automated day trading and investment bot for the Alpaca ma
 - `risk.py`: Logic for daily loss limits and position sizing.
 - `intelligence.py`: Confidence engine and market DNA profiling.
 - `multi_bot.py`: Multi-bot architecture and orchestrator.
+- `grid_trader.py`: Sideways market grid trading engine.
+- `sentiment_engine.py`: AI-driven market sentiment analysis.
+- `backtester.py`: Strategy backtesting and historical simulator.
+- `rebalancer.py`: Portfolio weight maintenance and rebalancing.
+- `tax_tracker.py`: Trade reporting and tax export utility.
 - `news_engine.py`: Macro news aggregator and economic calendar.
 - `strategy.py`: Technical analysis and entry/exit strategy definitions.
 - `license_manager.py`: Remote revocation and license status checks.
