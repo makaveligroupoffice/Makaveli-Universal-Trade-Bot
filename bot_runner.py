@@ -1505,8 +1505,8 @@ class AutoTrader:
             
             state_raw = self.state_store.load()
             if state_raw.get("license_revoked", False):
-                log.critical("LICENSE HAS BEEN REVOKED. Terminating bot.")
-                sys.exit(1)
+                log.critical("LICENSE HAS BEEN REVOKED. Terminating cycle for this user.")
+                return # Exit the run cycle for this user
                 
             if not state_raw.get("sharing_authorized", False):
                 # If not authorized, we check if the SHARING_ACTIVATION_KEY is provided.
@@ -1516,7 +1516,6 @@ class AutoTrader:
                 log.warning("Please contact the owner for the Sharing Activation Key.")
                 
                 # Check for interactive terminal to allow prompt authorization
-                import sys
                 if sys.stdin.isatty():
                     try:
                         print(f"\n{'='*50}")
@@ -1544,11 +1543,10 @@ class AutoTrader:
                 # For now, we'll just skip to prevent unauthorized use of the bot source.
                 if not single_cycle:
                     time.sleep(5)
-                    sys.exit(1)
                 return # Exit the run cycle for this user
         except Exception as e:
             log.error(f"Error checking authorization: {e}")
-            sys.exit(1)
+            return # Exit the run cycle for this user
 
         if not single_cycle:
             msg = f"AutoTrader started for user: {self.user.username if self.user else 'DEFAULT'}"
