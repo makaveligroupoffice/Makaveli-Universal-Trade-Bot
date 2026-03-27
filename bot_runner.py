@@ -1750,7 +1750,9 @@ if __name__ == "__main__":
         updater = AutoUpdater()
         if Config.ENABLE_AUTO_UPDATE:
             try:
-                updater.check_for_updates()
+                if updater.check_for_updates():
+                    log.info("Update found on startup. Restarting to apply changes...")
+                    os._exit(0) # launchd will restart
             except Exception as e:
                 log.error(f"Startup auto-update failed: {e}")
 
@@ -1785,7 +1787,9 @@ if __name__ == "__main__":
             # Periodic Auto-Update check (every 1 hour)
             if Config.ENABLE_AUTO_UPDATE and time.time() - last_update_check > 3600:
                 try:
-                    updater.check_for_updates()
+                    if updater.check_for_updates():
+                        log.info("New update found. Restarting to apply changes...")
+                        os._exit(0) # launchd will restart
                     last_update_check = time.time()
                 except Exception as e:
                     log.error(f"Auto-update failed: {e}")

@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import logging
 import requests
 import zipfile
@@ -50,6 +51,25 @@ def is_authorized_action(token=None):
 
 # We reuse the Flask app from webhook_server to keep everything on the same port
 app = webhook_app
+
+def run_auto_updater():
+    """Background thread to check for updates and auto-restart HUD."""
+    from updater import AutoUpdater
+    updater = AutoUpdater()
+    while True:
+        try:
+            # Check every hour
+            time.sleep(3600)
+            if updater.check_for_updates():
+                logger.info("Web HUD: New update pulled. Restarting process...")
+                os._exit(0) # launchd will restart
+        except Exception as e:
+            logger.error(f"Web HUD auto-update failed: {e}")
+
+if Config.ENABLE_AUTO_UPDATE:
+    update_thread = threading.Thread(target=run_auto_updater, daemon=True)
+    update_thread.start()
+    logger.info("Web HUD Auto-Updater thread started.")
 
 @app.route("/")
 def index():
