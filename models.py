@@ -21,5 +21,8 @@ class User(db.Model, UserMixin):
     alpaca_secret = db.Column(db.String(255), nullable=True)
     alpaca_paper = db.Column(db.Boolean, default=True)
 
+    # Sharing authorization token for this specific user
+    sharing_token = db.Column(db.String(50), nullable=True)
+
     def __repr__(self):
         return f'<User {self.username}>'

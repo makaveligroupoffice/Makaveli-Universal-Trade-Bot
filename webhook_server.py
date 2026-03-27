@@ -106,7 +106,13 @@ def register():
         return jsonify({"ok": False, "error": "Username already exists"}), 409
 
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-    new_user = User(username=username, password=hashed_password, email=email)
+    
+    # Generate unique sharing token for the new user
+    import secrets
+    import string
+    token = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+    
+    new_user = User(username=username, password=hashed_password, email=email, sharing_token=token)
     db.session.add(new_user)
     db.session.commit()
 

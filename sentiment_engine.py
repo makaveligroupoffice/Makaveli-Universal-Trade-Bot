@@ -67,7 +67,21 @@ class SentimentEngine:
         from market_data import MarketDataClient
         md = MarketDataClient()
         news = md.get_news(symbol, days=1)
-        return [n.headline for n in news] if news else []
+        
+        headlines = []
+        if news:
+            for n in news:
+                if hasattr(n, 'headline'):
+                    headlines.append(n.headline)
+                elif isinstance(n, dict) and 'headline' in n:
+                    headlines.append(n['headline'])
+                elif isinstance(n, (list, tuple)) and len(n) > 0:
+                    # If it's a list/tuple of items, maybe the first one is the headline?
+                    # Or maybe news is a list of tuples like (headline, date, etc)
+                    headlines.append(str(n[0]))
+                else:
+                    headlines.append(str(n))
+        return headlines
 
     def _parse_sentiment_score(self, report: str) -> float:
         """Enhanced heuristic to convert AI text report to a float score."""

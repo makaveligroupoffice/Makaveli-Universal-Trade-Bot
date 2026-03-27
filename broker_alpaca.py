@@ -19,6 +19,9 @@ class AlpacaBroker(BrokerBase):
             secret or Config.get_alpaca_secret(),
             paper=paper if paper is not None else Config.ALPACA_PAPER,
         )
+        self.alpaca_paper = paper if paper is not None else Config.ALPACA_PAPER
+        self.alpaca_key = key or Config.get_alpaca_key()
+        self.alpaca_secret = secret or Config.get_alpaca_secret()
         self.data_client = StockHistoricalDataClient(
             key or Config.get_alpaca_key(),
             secret or Config.get_alpaca_secret()

@@ -249,10 +249,11 @@ class MarketDataClient:
         """Fetch news for a symbol or general market news."""
         from alpaca.data.requests import NewsRequest
         from alpaca.data.historical import NewsClient
+        from datetime import datetime, timedelta, timezone
         
         client = NewsClient(Config.get_alpaca_key(), Config.get_alpaca_secret())
         
-        start = datetime.now(UTC) - timedelta(days=days)
+        start = datetime.now(timezone.utc) - timedelta(days=days)
         request = NewsRequest(
             symbols=symbol,
             start=start,
@@ -261,10 +262,18 @@ class MarketDataClient:
         
         try:
             response = client.get_news(request)
-            # If it's the newer SDK, it might be directly in response or .news
+            news = []
             if hasattr(response, 'news'):
-                return response.news
-            return response
+                news = response.news
+            else:
+                news = response
+            
+            # Ensure it's a list and not a nested object/tuple if that's what's happening
+            if isinstance(news, tuple):
+                news = list(news)
+            
+            # If the objects are somehow not what we expect, let's wrap them or check them
+            return news
         except Exception as e:
             print(f"Error fetching news: {e}")
             return []

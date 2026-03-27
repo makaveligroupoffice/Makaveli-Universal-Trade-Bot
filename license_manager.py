@@ -40,14 +40,15 @@ class LicenseManager:
             return hashlib.sha256(platform.node().encode()).hexdigest()[:16]
 
     @staticmethod
-    def verify_license() -> bool:
+    def verify_license(store: BotStateStore | None = None) -> bool:
         """
         Checks the remote LICENSE_URL to see if this bot's LICENSE_ID is still authorized.
         Also verifies the machine-binding to prevent license sharing.
         """
         # Step 1: Check Hardware Binding (Anti-Sharing)
         current_machine = LicenseManager.get_machine_id()
-        store = BotStateStore(Config.BOT_STATE_FILE)
+        if not store:
+            store = BotStateStore(Config.BOT_STATE_FILE)
         state = store.load()
         
         bound_machine = state.get("licensed_machine_id")
@@ -55,7 +56,7 @@ class LicenseManager:
         # If it's already activated, check if the hardware matches
         if bound_machine and bound_machine != current_machine:
             logger.critical("LICENSE VIOLATION: Bot is being shared or moved to unauthorized hardware.")
-            LicenseManager._set_revoked(True, "Machine ID mismatch. License is bound to another device.")
+            LicenseManager._set_revoked(True, "Machine ID mismatch. License is bound to another device.", store)
             return False
 
         if not Config.LICENSE_URL:
@@ -77,7 +78,7 @@ class LicenseManager:
             # Logic 1: Global kill switch
             if data.get("status") == "REVOKED_GLOBAL":
                 logger.critical("GLOBAL LICENSE REVOCATION DETECTED.")
-                LicenseManager._set_revoked(True, "Global revocation triggered.")
+                LicenseManager._set_revoked(True, "Global revocation triggered.", store)
                 return False
 
             # Logic 2: ID-based status and machine binding on server
@@ -89,29 +90,29 @@ class LicenseManager:
                     # Check status
                     if license_entry.get("status") == "REVOKED":
                         logger.critical(f"LICENSE STATUS: REVOKED for ID: {Config.LICENSE_ID}")
-                        LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} revoked.")
+                        LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} revoked.", store)
                         return False
                     
                     # Check server-side machine binding
                     server_machine_id = license_entry.get("machine_id")
                     if server_machine_id and server_machine_id != current_machine:
                         logger.critical(f"LICENSE VIOLATION: Server reports this ID is bound to {server_machine_id}")
-                        LicenseManager._set_revoked(True, "Remote machine ID mismatch.")
+                        LicenseManager._set_revoked(True, "Remote machine ID mismatch.", store)
                         return False
                 elif license_entry == "REVOKED":
                     logger.critical(f"LICENSE STATUS: REVOKED for ID: {Config.LICENSE_ID}")
-                    LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} revoked.")
+                    LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} revoked.", store)
                     return False
 
             # Logic 3: Specific ID revocation list
             revoked_ids = data.get("revoked_ids", [])
             if Config.LICENSE_ID in revoked_ids:
                 logger.critical(f"LICENSE REVOKED for ID: {Config.LICENSE_ID}")
-                LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} in revocation list.")
+                LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} in revocation list.", store)
                 return False
 
             # If we're here, the license is still valid according to the server
-            LicenseManager._set_revoked(False, "License verification successful.")
+            LicenseManager._set_revoked(False, "License verification successful.", store)
             
             # If not already bound locally, bind it now
             if not bound_machine:
@@ -126,8 +127,9 @@ class LicenseManager:
             return True
 
     @staticmethod
-    def _set_revoked(is_revoked: bool, reason: str):
-        store = BotStateStore(Config.BOT_STATE_FILE)
+    def _set_revoked(is_revoked: bool, reason: str, store: BotStateStore | None = None):
+        if not store:
+            store = BotStateStore(Config.BOT_STATE_FILE)
         state = store.load()
         if state.get("license_revoked") != is_revoked:
             state["license_revoked"] = is_revoked

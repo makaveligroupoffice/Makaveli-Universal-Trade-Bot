@@ -68,9 +68,14 @@ def get_stats():
         with open(Config.RISK_STATE_FILE, "r") as f:
             risk_state = json.load(f)
             
-        # Get bot state (operational mode)
-        with open(Config.BOT_STATE_FILE, "r") as f:
-            bot_state = json.load(f)
+        # Get bot state (operational mode) - USER SPECIFIC
+        user_id = current_user.get_id()
+        state_path = f"logs/bot_state_user_{user_id}.json"
+        if os.path.exists(state_path):
+            with open(state_path, "r") as f:
+                bot_state = json.load(f)
+        else:
+            bot_state = {"enabled": True, "operational_state": "SCANNING", "sharing_authorized": False}
             
         # Get open positions
         positions = broker.get_open_positions()
@@ -88,6 +93,27 @@ def get_stats():
         from performance import PerformanceAnalyzer
         analyzer = PerformanceAnalyzer(Config.TRADE_JOURNAL_FILE)
         perf = analyzer.analyze_recent_trades(days=7) or {}
+
+        # Check for new unauthorized users (Master Account only)
+        unauthorized_users = []
+        if current_user.username == "Makaveli1996" or current_user.get_id() == "2":
+            from models import User
+            from bot_state import BotStateStore
+            # Get all users except current
+            other_users = User.query.filter(User.id != int(current_user.get_id())).all()
+            for u in other_users:
+                state_path = f"logs/bot_state_user_{u.id}.json"
+                is_authorized = False
+                if os.path.exists(state_path):
+                    u_state = BotStateStore(state_path).load()
+                    is_authorized = u_state.get("sharing_authorized", False)
+                
+                if not is_authorized:
+                    unauthorized_users.append({
+                        "id": u.id,
+                        "username": u.username,
+                        "token": u.sharing_token
+                    })
 
         return jsonify({
             "ok": True,
@@ -107,7 +133,8 @@ def get_stats():
             "whale_sentiment": whale_sentiment,
             "positions": pos_data,
             "sharpe_ratio": perf.get("sharpe_ratio"),
-            "profit_factor": perf.get("profit_factor")
+            "profit_factor": perf.get("profit_factor"),
+            "unauthorized_users": unauthorized_users
         })
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
@@ -142,7 +169,9 @@ def authorize_bot():
         
         from bot_state import BotStateStore
         from license_manager import LicenseManager
-        store = BotStateStore(Config.BOT_STATE_FILE)
+        user_id = current_user.get_id()
+        state_path = f"logs/bot_state_user_{user_id}.json"
+        store = BotStateStore(state_path)
         state = store.load()
 
         # Step 1: Check for One-Time Activation Key (ACT-XXXX-...)
@@ -189,8 +218,15 @@ def authorize_bot():
             store.save(state)
             logger.info("Bot successfully SHARING-AUTHORIZED with Master Key.")
             return jsonify({"ok": True, "message": "Sharing authorized successfully!"})
-        else:
-            return jsonify({"ok": False, "error": "Invalid Activation Key or Master Key"}), 401
+            
+        # Step 3: Check for per-user sharing token generated during registration
+        if token and token == current_user.sharing_token:
+            state["sharing_authorized"] = True
+            store.save(state)
+            logger.info(f"Bot successfully SHARING-AUTHORIZED for user {current_user.username} with personal token.")
+            return jsonify({"ok": True, "message": "Personal sharing token accepted!"})
+        
+        return jsonify({"ok": False, "error": "Invalid Activation Key or Master Key"}), 401
     except Exception as e:
         logger.error(f"Error authorizing bot sharing: {e}")
         return jsonify({"ok": False, "error": str(e)})
@@ -324,11 +360,13 @@ def kill_switch():
         if token != Config.AUTH_TOKEN:
             return jsonify({"ok": False, "error": "Invalid token"}), 401
 
+        # Activate kill switch
         from bot_state import BotStateStore
-        store = BotStateStore(Config.BOT_STATE_FILE)
+        user_id = current_user.get_id()
+        state_path = f"logs/bot_state_user_{user_id}.json"
+        store = BotStateStore(state_path)
         state = store.load()
         
-        # Activate kill switch
         state["enabled"] = False
         state["kill_switch_active"] = True
         store.save(state)
@@ -393,7 +431,9 @@ def restrict_ip():
 def get_audit_trail():
     try:
         from bot_state import BotStateStore
-        state = BotStateStore(Config.BOT_STATE_FILE).load()
+        user_id = current_user.get_id()
+        state_path = f"logs/bot_state_user_{user_id}.json"
+        state = BotStateStore(state_path).load()
         return jsonify({"ok": True, "audit_trail": state.get("audit_trail", [])})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -403,7 +443,9 @@ def get_audit_trail():
 def toggle_bot():
     try:
         from bot_state import BotStateStore
-        store = BotStateStore(Config.BOT_STATE_FILE)
+        user_id = current_user.get_id()
+        state_path = f"logs/bot_state_user_{user_id}.json"
+        store = BotStateStore(state_path)
         state = store.load()
         
         # Invert current state

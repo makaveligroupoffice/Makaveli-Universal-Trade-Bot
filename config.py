@@ -103,6 +103,7 @@ class Config:
 
     # Strategy controls
     ENABLE_EXTENDED_HOURS: bool = os.getenv("ENABLE_EXTENDED_HOURS", "true").lower() == "true"
+    MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.2")) # 0.2% max spread
     TRADE_COOLDOWN_MINUTES: int = int(os.getenv("TRADE_COOLDOWN_MINUTES", "30")) # Cooldown after exit
     ENABLE_INTERNET_RESEARCH: bool = os.getenv("ENABLE_INTERNET_RESEARCH", "true").lower() == "true"
     RESEARCH_INTERVAL_SECONDS: int = int(os.getenv("RESEARCH_INTERVAL_SECONDS", "86400")) # 24 hours

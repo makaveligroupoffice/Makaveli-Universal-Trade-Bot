@@ -53,7 +53,7 @@ class MultiBotManager:
     def _setup_bots(self):
         # Bot 1: Scalper (1m bars, aggressive)
         self.bots["scalper"] = AutoTrader(
-            self.broker, 
+            broker=self.broker, 
             timeframe="1Min", 
             strategy_active=["SCALPING"],
             risk_pct=0.5 # Low risk per trade for high frequency
@@ -61,7 +61,7 @@ class MultiBotManager:
         
         # Bot 2: Swing Trader (15m or Hourly, conservative)
         self.bots["swing"] = AutoTrader(
-            self.broker,
+            broker=self.broker,
             timeframe="15Min",
             strategy_active=["TREND_SNIPER", "CONFLUENCE"],
             risk_pct=2.0
@@ -69,7 +69,7 @@ class MultiBotManager:
         
         # Bot 3: Trend Follower (5m, moderate)
         self.bots["trend_follower"] = AutoTrader(
-            self.broker,
+            broker=self.broker,
             timeframe="5Min",
             strategy_active=["TREND_SNIPER"],
             risk_pct=1.0
@@ -77,7 +77,7 @@ class MultiBotManager:
         
         # Bot 4: Pairs Trader (Daily/1H, relative value)
         self.bots["pairs"] = AutoTrader(
-            self.broker,
+            broker=self.broker,
             timeframe="15Min",
             strategy_active=["PAIRS"],
             risk_pct=1.5
@@ -98,7 +98,7 @@ class MultiBotManager:
         prioritize, disable = system.get_priority_strategies()
         
         # Master Risk Oversight
-        current_equity = self.broker.get_equity()
+        current_equity = self.broker.get_account_equity()
         if not self.risk_manager.can_trade(current_equity=current_equity):
             log.warning("MASTER RISK CONTROL: Trading disabled for all bots.")
             # Still run cycles for exits (implicit in AutoTrader logic when entries disabled)
@@ -113,7 +113,8 @@ class MultiBotManager:
                 continue
 
             # 0.2.1 SENTIMENT OVERRIDE: Skip if overall market sentiment is Extreme Fear
-            market_sentiment = self.sentiment_engine.get_market_sentiment("SPY")
+            market_sentiment_data = self.sentiment_engine.get_market_sentiment("SPY")
+            market_sentiment = market_sentiment_data.get("score", 0.0)
             if market_sentiment < -0.8:
                 log.warning(f"Extreme Fear detected ({market_sentiment}). Pausing {name} entries.")
                 # Only allow exits (implicit in AutoTrader)

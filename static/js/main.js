@@ -50,6 +50,24 @@ function updateStats() {
                 if (data.profit_factor) document.getElementById('profitFactor').innerText = data.profit_factor.toFixed(2);
                 document.getElementById('system-time').innerText = `LAST SYNC: ${new Date().toLocaleTimeString()}`;
 
+                // Update Master Notifications (Master Account only)
+                const masterNotify = document.getElementById('masterNotifications');
+                if (masterNotify) {
+                    if (data.unauthorized_users && data.unauthorized_users.length > 0) {
+                        masterNotify.classList.remove('hidden');
+                        masterNotify.innerHTML = data.unauthorized_users.map(u => `
+                            <div class="cyber-panel p-3 rounded bg-yellow-900 bg-opacity-20 border-yellow-500 animate-pulse">
+                                <h2 class="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">Master Notification: New User Pending</h2>
+                                <p class="text-[12px] text-white">ID: ${u.id} | USER: ${u.username}</p>
+                                <p class="text-[10px] text-gray-400 mt-1 uppercase">SHARING TOKEN: <span class="text-yellow-400 font-mono select-all font-bold">${u.token}</span></p>
+                                <p class="text-[8px] text-gray-600 mt-1">GIVE THIS TOKEN TO THE USER TO AUTHORIZE THEIR BOT.</p>
+                            </div>
+                        `).join('');
+                    } else {
+                        masterNotify.classList.add('hidden');
+                    }
+                }
+
                 // Update Withdrawal Panel
                 const withdrawalPanel = document.getElementById('withdrawalPanel');
                 if (data.bank_withdrawal_enabled) {

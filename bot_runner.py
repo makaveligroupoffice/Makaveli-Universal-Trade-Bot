@@ -59,12 +59,11 @@ class AutoTrader:
         self.strategy_active = strategy_active or ["SNIPER", "CONFLUENCE"]
         self.risk_pct_override = risk_pct
         self.last_run = time.time()
-        self._validate_launch_mode()
-
+        
         if broker:
             self.broker = broker
             user_id = "external"
-        elif user and user.alpaca_key and user.alpaca_secret:
+        elif user and hasattr(user, 'alpaca_key') and user.alpaca_key and user.alpaca_secret:
             self.broker = AlpacaBroker(
                 key=user.alpaca_key,
                 secret=user.alpaca_secret,
@@ -73,7 +72,9 @@ class AutoTrader:
             user_id = user.id
         else:
             self.broker = AlpacaBroker()
-            user_id = None
+            user_id = getattr(user, "id", None)
+
+        self._validate_launch_mode()
 
         self.risk = RiskManager(user_id=user_id)
         self.scanner = Scanner()
@@ -102,7 +103,11 @@ class AutoTrader:
         self.daily_summary = self._default_daily_summary()
 
     def _validate_launch_mode(self):
-        paper = self.user.alpaca_paper if self.user else Config.ALPACA_PAPER
+        if hasattr(self.broker, "alpaca_paper"):
+            paper = self.broker.alpaca_paper
+        else:
+            paper = self.user.alpaca_paper if self.user else Config.ALPACA_PAPER
+        
         if not paper:
             # Triple-check safety for Live trading
             required_ack = "I_UNDERSTAND_THIS_IS_REAL_MONEY"
@@ -1226,8 +1231,7 @@ class AutoTrader:
                 self._save_state()
                 
                 # Audit Trail Log
-                from bot_state import BotStateStore
-                BotStateStore(Config.BOT_STATE_FILE).log_action(f"{action.upper()} ENTRY", f"symbol={symbol} qty={qty} reason={reason}")
+                self.state_store.log_action(f"{action.upper()} ENTRY", f"symbol={symbol} qty={qty} reason={reason}")
 
                 # Confidence and Trade Score
                 from intelligence import ConfidenceEngine
@@ -1497,7 +1501,7 @@ class AutoTrader:
         # 1. License / Sharing Authorization Check
         try:
             from license_manager import LicenseManager
-            LicenseManager.verify_license() # Remote check
+            LicenseManager.verify_license(store=self.state_store) # Remote check
             
             state_raw = self.state_store.load()
             if state_raw.get("license_revoked", False):
@@ -1508,16 +1512,40 @@ class AutoTrader:
                 # If not authorized, we check if the SHARING_ACTIVATION_KEY is provided.
                 # Only the owner knows this key (MAKA-VALI-PRIME-2026).
                 # New users CANNOT bypass this by just generating a local AUTH_TOKEN.
-                log.warning("Bot sharing NOT AUTHORIZED. Access Denied.")
+                log.warning(f"Bot sharing NOT AUTHORIZED for user {self.user.username if self.user else 'DEFAULT'}. Access Denied.")
                 log.warning("Please contact the owner for the Sharing Activation Key.")
+                
+                # Check for interactive terminal to allow prompt authorization
+                import sys
+                if sys.stdin.isatty():
+                    try:
+                        print(f"\n{'='*50}")
+                        print(f"AUTHORIZATION REQUIRED FOR USER: {self.user.username.upper()}")
+                        print(f"ID: {self.user.id}")
+                        print(f"{'='*50}")
+                        token = input(f"ENTER SHARING TOKEN TO AUTHORIZE: ").strip()
+                        
+                        # Verify against user's specific sharing_token or the Master Key
+                        if token == Config.SHARING_ACTIVATION_KEY or (hasattr(self.user, 'sharing_token') and token == self.user.sharing_token):
+                            state_raw["sharing_authorized"] = True
+                            self.state_store.save(state_raw)
+                            log.info(f"SUCCESS: User {self.user.username} has been AUTHORIZED via terminal.")
+                            # Proceed with the run cycle
+                            return self.run(single_cycle=single_cycle)
+                        else:
+                            log.error("INVALID TOKEN. Authorization failed.")
+                    except EOFError:
+                        pass
+                
                 if not single_cycle:
                     send_notification("Trade Bot startup blocked: Authorization Required", title="Security Alert")
                 
                 # In a real scenario, we might wait for input or a web trigger.
-                # For now, we'll just exit to prevent unauthorized use of the bot source.
+                # For now, we'll just skip to prevent unauthorized use of the bot source.
                 if not single_cycle:
                     time.sleep(5)
                     sys.exit(1)
+                return # Exit the run cycle for this user
         except Exception as e:
             log.error(f"Error checking authorization: {e}")
             sys.exit(1)

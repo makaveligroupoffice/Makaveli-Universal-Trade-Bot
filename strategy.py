@@ -210,23 +210,9 @@ class Strategy:
         # --- Number One Bot: Liquidity Mapping Filter ---
         if Config.ENABLE_LIQUIDITY_MAPPING:
             from intelligence import PortfolioIntelligence # Using it for mapping if available
-            # We'll call the detector we just added to PortfolioIntelligence (it was added to the module)
             from intelligence import PortfolioIntelligence as PI # Alias
-            # Wait, I added it as a static method to the module scope or PortfolioIntelligence?
-            # Let me check. Ah, I added it to the module as a standalone function or under a class?
-            # Looking at my previous multi_edit... I added it to the module before MarketRegimeIntelligence.
-            # No, I added it as a static method to PortfolioIntelligence? 
-            # Re-reading: 
-            # replace: "prioritize, disable... return... @staticmethod def detect_liquidity_pools(bars)... class MarketRegimeIntelligence"
-            # It was added to SelfAdaptingStrategySystem? No, look at the lines:
-            # 107: return prioritize, disable
-            # 108: 
-            # 109: @staticmethod
-            # 110: def detect_liquidity_pools(bars):
-            # It seems it was added inside SelfAdaptingStrategySystem.
             from intelligence import SelfAdaptingStrategySystem
             pools = SelfAdaptingStrategySystem.detect_liquidity_pools(bars)
-            # Avoid buying right into a SELL_SIDE_LIQUIDITY pool (resistance)
             for pool in pools:
                 if pool['type'] == "SELL_SIDE_LIQUIDITY":
                     if abs(last['close'] - pool['price']) / last['close'] < 0.002: # Within 0.2%
@@ -246,18 +232,15 @@ class Strategy:
         
         # 1. Market Regime Filters (Ultimate Bot Layer)
         if "CHOP" in regime:
-            # Only allow specific mean-reversion or scalping strategies in chop
             allowed_in_chop = ["SCALPING", "RSI", "BOLLINGER"]
             active = [s for s in active if s in allowed_in_chop]
             if not active:
                 return False, f"Market regime is {regime}, no suitable active strategies", 0.0, last_indicators
 
         if "LOW_LIQUIDITY" in regime:
-            # Tighten RVOL requirements in low liquidity
             min_rvol_base *= 1.5
 
         if "TRENDING_BEAR" in regime and "TREND" in active:
-            # Don't buy in a strong bear trend unless it's a deep reversal
             if not ("RSI" in active and last['rsi14'] < 25):
                 return False, f"Market regime is {regime}, trend-following buys disabled", 0.0, last_indicators
 
@@ -269,7 +252,6 @@ class Strategy:
         se = SentimentEngine()
         sentiment = se.get_market_sentiment(symbol)
         
-        # Super Charged: Use Urgency and Score for real-time protection
         if sentiment.get("score", 0.0) < -0.6 and sentiment.get("urgency", 0.0) > 0.5:
             return False, f"SUPER CHARGED: High-Urgency Negative Sentiment ({sentiment['score']}) detected", 0.0, last_indicators
 
@@ -737,7 +719,7 @@ class Strategy:
                     is_profit_locked = True
                     lock_exit_price = entry_price * (1 + (max_profit_pct * profit_lock_retain_pct))
                     if current_price <= lock_exit_price:
-                        return True, f"profit lock hit: peak {max_profit_pct*100:.2f}% (locked {max_profit_pct*profit_lock_retain_pct*100:.2f}%)"
+                        return True, f"profit lock hit: peak {max_profit_pct*100:.2f}% (locked {max_profit_pct*profit_lock_retain_pct*100:.2f}%)", 1.0
             else:
                 low_since_entry = high_since_entry
                 max_profit_pct = (entry_price / low_since_entry) - 1 if low_since_entry else 0
@@ -745,7 +727,7 @@ class Strategy:
                     is_profit_locked = True
                     lock_exit_price = entry_price * (1 - (max_profit_pct * profit_lock_retain_pct))
                     if current_price >= lock_exit_price:
-                        return True, f"short profit lock hit: peak {max_profit_pct*100:.2f}% (locked {max_profit_pct*profit_lock_retain_pct*100:.2f}%)"
+                        return True, f"short profit lock hit: peak {max_profit_pct*100:.2f}% (locked {max_profit_pct*profit_lock_retain_pct*100:.2f}%)", 1.0
 
         last_atr = 0.0
         df_full = None
