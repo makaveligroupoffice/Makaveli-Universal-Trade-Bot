@@ -21,6 +21,10 @@
         <!-- Dashboard Header -->
         <div class="mb-4 text-center">
             <h1 class="text-2xl font-bold glitch-text uppercase tracking-widest">TradeBot Cyber-HUD</h1>
+            <div class="mt-2 mb-2 flex justify-between items-center text-[10px] text-gray-500 uppercase px-4 border-t border-b border-gray-900 py-1">
+                <span>User: <span class="text-green-500">{{ current_user.username }}</span> (ID: <span id="current-user-id">{{ current_user.id }}</span>)</span>
+                <a href="/logout" class="text-red-500 hover:text-red-400 border border-red-900 px-2 py-0.5 rounded text-[8px] tracking-tight">Sign Out</a>
+            </div>
             <p id="system-time" class="text-xs mt-1">SYNCING...</p>
         </div>
 

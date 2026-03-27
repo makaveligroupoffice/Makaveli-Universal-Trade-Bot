@@ -176,6 +176,14 @@ def login():
     return jsonify({"ok": False, "error": "Invalid username or password"}), 401
 
 
+@app.get("/logout")
+@login_required
+def logout_get():
+    logout_user()
+    from flask import redirect, url_for
+    return redirect(url_for('login'))
+
+
 @app.post("/logout")
 @login_required
 def logout():
