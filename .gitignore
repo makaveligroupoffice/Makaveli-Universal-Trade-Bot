@@ -6,6 +6,7 @@ __pycache__/
 
 # Ignore secret keys and logs
 .env
+instance/
 logs/
 *.log
 *.json
