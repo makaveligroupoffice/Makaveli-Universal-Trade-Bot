@@ -20,6 +20,34 @@ from webhook_server import app as webhook_app
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tradebot_web")
 
+def is_authorized_action(token=None):
+    """
+    Helper to verify if an action is authorized.
+    Checks provided token against Master Keys and User's Personal Token.
+    Also allows if user is already 'sharing_authorized' in their bot state.
+    """
+    # 1. Check if the provided token matches any master keys
+    if token and token in [Config.AUTH_TOKEN, Config.SHARING_ACTIVATION_KEY]:
+        return True
+    
+    # 2. Check if it matches the current user's personal token
+    if token and hasattr(current_user, 'sharing_token') and token == current_user.sharing_token:
+        return True
+    
+    # 3. Check if the user is already sharing authorized in their state file
+    try:
+        from bot_state import BotStateStore
+        user_id = current_user.get_id()
+        state_path = f"logs/bot_state_user_{user_id}.json"
+        if os.path.exists(state_path):
+            state = BotStateStore(state_path).load()
+            if state.get("sharing_authorized", False):
+                return True
+    except Exception as e:
+        logger.error(f"Authorization check failed: {e}")
+        
+    return False
+
 # We reuse the Flask app from webhook_server to keep everything on the same port
 app = webhook_app
 
@@ -134,6 +162,7 @@ def get_stats():
             "positions": pos_data,
             "sharpe_ratio": perf.get("sharpe_ratio"),
             "profit_factor": perf.get("profit_factor"),
+            "sharing_authorized": bot_state.get("sharing_authorized", False),
             "unauthorized_users": unauthorized_users
         })
     except Exception as e:
@@ -147,7 +176,7 @@ def check_license_now():
     try:
         data = request.json or {}
         token = data.get("token")
-        if token != Config.AUTH_TOKEN:
+        if not is_authorized_action(token):
             return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
         from license_manager import LicenseManager
@@ -240,7 +269,7 @@ def rotate_token():
         token = data.get("token")
         
         # Verify current token before allowing rotation
-        if token == Config.AUTH_TOKEN:
+        if is_authorized_action(token):
             import subprocess
             result = subprocess.run(["python3", "generate_token.py"], capture_output=True, text=True)
             if result.returncode == 0:
@@ -263,7 +292,7 @@ def learn_youtube():
         token = data.get("token")
         
         # Verify token for security
-        if token != Config.AUTH_TOKEN:
+        if not is_authorized_action(token):
             return jsonify({"ok": False, "error": "Invalid token"}), 401
             
         if not url:
@@ -296,7 +325,7 @@ def reading_session():
         token = data.get("token")
         
         # Verify token for security
-        if token != Config.AUTH_TOKEN:
+        if not is_authorized_action(token):
             return jsonify({"ok": False, "error": "Invalid token"}), 401
             
         import subprocess
@@ -318,7 +347,7 @@ def withdraw_profits():
         token = data.get("token")
         
         # Verify token for security
-        if token != Config.AUTH_TOKEN:
+        if not is_authorized_action(token):
             return jsonify({"ok": False, "error": "Invalid token"}), 401
             
         if not Config.BANK_WITHDRAWAL_ENABLED or not Config.BANK_ACCOUNT_ID:
@@ -357,7 +386,7 @@ def kill_switch():
         token = data.get("token")
         
         # Verify token for security
-        if token != Config.AUTH_TOKEN:
+        if not is_authorized_action(token):
             return jsonify({"ok": False, "error": "Invalid token"}), 401
 
         # Activate kill switch
@@ -403,8 +432,9 @@ def kill_switch():
 @app.route("/api/bot/invest-crypto", methods=["POST"])
 @login_required
 def invest_crypto():
-    data = request.json
-    if not data or data.get("token") != Config.AUTH_TOKEN:
+    data = request.json or {}
+    token = data.get("token")
+    if not is_authorized_action(token):
         return jsonify({"ok": False, "error": "Unauthorized"}), 403
 
     def run_investment():
@@ -467,7 +497,7 @@ def setup_grid():
     price = data.get('price')
     token = data.get('token')
     
-    if token != Config.AUTH_TOKEN:
+    if not is_authorized_action(token):
         return jsonify({"status": "error", "message": "Invalid Master Token"}), 403
         
     if not symbol or not price:

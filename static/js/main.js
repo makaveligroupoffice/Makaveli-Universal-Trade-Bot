@@ -1,6 +1,6 @@
 function withdrawProfitsToBank() {
-    const token = prompt('Enter Authorization Token to confirm profit withdrawal:');
-    if (!token) return;
+    let token = isSharingAuthorized ? null : prompt('Enter Authorization Token to confirm profit withdrawal:');
+    if (!isSharingAuthorized && !token) return;
     
     if (!confirm('This will send all profits above your capital reserve to your linked bank account. CONTINUE?')) return;
     
@@ -29,6 +29,7 @@ const chestMonitor = document.getElementById('chestMonitor');
 let pnlValue = 0;
 let botState = 'SCANNING';
 let frame = 0;
+let isSharingAuthorized = false;
 
 function updateStats() {
     fetch('/api/stats')
@@ -37,6 +38,7 @@ function updateStats() {
             if (data.ok) {
                 pnlValue = data.daily_pnl;
                 botState = data.operational_state;
+                isSharingAuthorized = data.sharing_authorized;
                 
                 document.getElementById('dailyPnl').innerText = `$${pnlValue.toFixed(2)}`;
                 document.getElementById('dailyPnl').className = pnlValue >= 0 ? 'text-xl font-bold text-green-400' : 'text-xl font-bold text-red-400';
@@ -226,8 +228,8 @@ function toggleBot() {
 }
 
 function triggerKillSwitch() {
-    const token = prompt('Enter Authorization Token to confirm Kill Switch:');
-    if (!token) return;
+    let token = isSharingAuthorized ? null : prompt('Enter Authorization Token to confirm Kill Switch:');
+    if (!isSharingAuthorized && !token) return;
     
     if (!confirm('CRITICAL: This will stop the bot, cancel all orders, and close all positions. ARE YOU SURE?')) return;
     
@@ -271,8 +273,8 @@ function promptAuthorization() {
 }
 
 function rotateToken() {
-    const token = prompt('Enter Current Authorization Token to authorize rotation:');
-    if (!token) return;
+    let token = isSharingAuthorized ? null : prompt('Enter Current Authorization Token to authorize rotation:');
+    if (!isSharingAuthorized && !token) return;
     
     if (!confirm('This will generate a new random token and update the auth file. You will need to use the NEW token next time. CONTINUE?')) return;
 
@@ -298,8 +300,8 @@ function learnFromYoutube() {
     const url = prompt('Enter YouTube Video URL:');
     if (!url) return;
     
-    const token = prompt('Enter Authorization Token to authorize learning:');
-    if (!token) return;
+    let token = isSharingAuthorized ? null : prompt('Enter Authorization Token to authorize learning:');
+    if (!isSharingAuthorized && !token) return;
 
     const log = document.getElementById('logFeed');
     log.innerHTML += `> REQUESTING YOUTUBE ANALYSIS...<br>`;
@@ -319,8 +321,8 @@ function learnFromYoutube() {
 }
 
 function deepReadingSession() {
-    const token = prompt('Enter Authorization Token to authorize reading session:');
-    if (!token) return;
+    let token = isSharingAuthorized ? null : prompt('Enter Authorization Token to authorize reading session:');
+    if (!isSharingAuthorized && !token) return;
 
     if (!confirm('The bot will analyze 25+ classic trading books and rewrite its core strategy. This takes time. CONTINUE?')) return;
 
@@ -346,8 +348,9 @@ function setupGridTrader() {
     if (!symbol) return;
     const price = prompt('Enter base price for Grid levels:');
     if (!price) return;
-    const token = prompt('Enter Master Token to authorize Grid Setup:');
-    if (!token) return;
+    
+    let token = isSharingAuthorized ? null : prompt('Enter Master Token to authorize Grid Setup:');
+    if (!isSharingAuthorized && !token) return;
 
     const log = document.getElementById('logFeed');
     log.innerHTML += `> SETTING UP GRID FOR ${symbol} @ ${price}...<br>`;
@@ -367,8 +370,8 @@ function setupGridTrader() {
 }
 
 function investCrypto() {
-    const token = prompt('Enter Authorization Token to authorize crypto investment:');
-    if (!token) return;
+    let token = isSharingAuthorized ? null : prompt('Enter Authorization Token to authorize crypto investment:');
+    if (!isSharingAuthorized && !token) return;
 
     if (!confirm('The bot will scan for long-term crypto investments and buy them based on AI analysis. CONTINUE?')) return;
 
@@ -390,8 +393,8 @@ function investCrypto() {
 }
 
 function checkLicense() {
-    const token = prompt('Enter Authorization Token to check license:');
-    if (!token) return;
+    let token = isSharingAuthorized ? null : prompt('Enter Authorization Token to check license:');
+    if (!isSharingAuthorized && !token) return;
 
     const log = document.getElementById('logFeed');
     log.innerHTML += `> REQUESTING REMOTE LICENSE VERIFICATION...<br>`;
