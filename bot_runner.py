@@ -87,7 +87,7 @@ class AutoTrader:
         if user_id and user_id != "external":
             journal_path = os.path.join(Config.LOG_DIR, f"trade_journal_user_{user_id}.jsonl")
 
-        self.trade_journal = TradeJournal(journal_path)
+        self.journal = TradeJournal(journal_path)
         self.analyzer = PerformanceAnalyzer(journal_path)
         self.learning = LearningEngine(journal_path)
         self.ai = AIEngine()
