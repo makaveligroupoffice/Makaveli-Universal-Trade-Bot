@@ -23,6 +23,14 @@ class AutoUpdater:
         """
         if not self.enabled:
             return False
+            
+        # Point 8: systemd is the ONLY process manager. 
+        # We check if we are running under systemd or if auto-update should be restricted.
+        # If /etc/systemd/system/tradebot.service exists, we are in production.
+        is_production = os.path.exists("/etc/systemd/system/tradebot.service")
+        if is_production:
+            log.debug("Production mode detected (systemd). Auto-updater will NOT pull code to avoid interference.")
+            return False
 
         try:
             log.info(f"Checking for updates from {self.remote}/{self.branch}...")

@@ -52,3 +52,12 @@ class SecurityManager:
         if not request_secret:
             return False
         return request_secret == Config.WEBHOOK_SECRET
+    
+    @classmethod
+    def validate_tradebot_secret(cls, request_secret: str) -> bool:
+        """Validates if the provided secret matches the X-TradeBot-Secret."""
+        if not request_secret:
+            return False
+        # For now, we reuse WEBHOOK_SECRET for both for simplicity, 
+        # or we could add a separate TRADEBOT_SECRET to Config.
+        return request_secret == Config.WEBHOOK_SECRET

@@ -75,8 +75,9 @@ def _get_authenticated_user(req):
             pass
 
     # 2. Check for webhook secret in header
-    header_secret = req.headers.get("X-Webhook-Secret", "")
-    if SecurityManager.validate_webhook_secret(header_secret):
+    # Support both X-Webhook-Secret and the newer X-TradeBot-Secret
+    header_secret = req.headers.get("X-TradeBot-Secret") or req.headers.get("X-Webhook-Secret", "")
+    if SecurityManager.validate_tradebot_secret(header_secret) or SecurityManager.validate_webhook_secret(header_secret):
         # If secret is valid, we still need a user to execute the trade.
         # Webhooks without JWT must specify which user they are for,
         # otherwise we fallback to the first admin or first user.

@@ -62,7 +62,10 @@ def run_auto_updater():
             time.sleep(3600)
             if updater.check_for_updates():
                 logger.info("Web HUD: New update pulled. Restarting process...")
-                os._exit(0) # launchd will restart
+                # Only exit if NOT on production (launchd will restart on Mac, 
+                # but systemd restart is handled manually as per user Point 4 and 8)
+                if not os.path.exists("/etc/systemd/system/tradebot.service"):
+                    os._exit(0)
         except Exception as e:
             logger.error(f"Web HUD auto-update failed: {e}")
 
@@ -487,13 +490,17 @@ def restrict_ip():
     if Config.ALLOWED_IPS:
         if "*" in Config.ALLOWED_IPS:
             return
-        client_ip = request.remote_addr
+        
+        # Check X-Forwarded-For if behind a proxy like Nginx
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(',')[0].strip()
+
         if client_ip not in Config.ALLOWED_IPS and client_ip != '127.0.0.1':
-            return jsonify({"ok": False, "error": "IP Forbidden"}), 403
+            return jsonify({"ok": False, "error": f"IP Forbidden: {client_ip}"}), 403
     elif Config.IP_WHITELIST:
-        client_ip = request.remote_addr
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(',')[0].strip()
+
         if client_ip not in Config.IP_WHITELIST and client_ip != '127.0.0.1':
-            return jsonify({"ok": False, "error": "IP Forbidden"}), 403
+            return jsonify({"ok": False, "error": f"IP Forbidden: {client_ip}"}), 403
 
 @app.route("/api/bot/audit-trail")
 @login_required
@@ -630,4 +637,9 @@ def download_bot():
         return jsonify({"ok": False, "error": str(e)})
 
 if __name__ == "__main__":
-    app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
+    app.run(
+        host=Config.HOST,
+        port=Config.PORT,
+        debug=False,
+        use_reloader=False
+    )
