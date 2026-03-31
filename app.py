@@ -16,6 +16,7 @@ from config import Config
 from broker_alpaca import AlpacaBroker
 from risk import RiskManager
 from webhook_server import app as webhook_app
+from models import db, User, TradeAudit
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -39,9 +40,8 @@ def is_authorized_action(token=None):
     try:
         from bot_state import BotStateStore
         user_id = current_user.get_id()
-        state_path = f"logs/bot_state_user_{user_id}.json"
-        if os.path.exists(state_path):
-            state = BotStateStore(state_path).load()
+        if user_id:
+            state = BotStateStore(Config.BOT_STATE_FILE, user_id=user_id).load()
             if state.get("sharing_authorized", False):
                 return True
     except Exception as e:
@@ -200,7 +200,11 @@ def check_license_now():
             return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
         from license_manager import LicenseManager
-        is_valid = LicenseManager.verify_license()
+        from bot_state import BotStateStore
+        user_id = current_user.get_id()
+        store = BotStateStore(Config.BOT_STATE_FILE, user_id=user_id)
+        
+        is_valid = LicenseManager.verify_license(store=store)
         return jsonify({
             "ok": True,
             "is_valid": is_valid,
@@ -208,6 +212,16 @@ def check_license_now():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/user/broker", methods=["POST"])
+@login_required
+def update_broker():
+    data = request.json or {}
+    current_user.alpaca_key = data.get("alpaca_key")
+    current_user.alpaca_secret = data.get("alpaca_secret")
+    current_user.alpaca_paper = data.get("alpaca_paper", True)
+    db.session.commit()
+    return jsonify({"ok": True, "message": "Broker settings updated and encrypted."})
 
 @app.route("/api/bot/authorize", methods=["POST"])
 @login_required
@@ -219,8 +233,7 @@ def authorize_bot():
         from bot_state import BotStateStore
         from license_manager import LicenseManager
         user_id = current_user.get_id()
-        state_path = f"logs/bot_state_user_{user_id}.json"
-        store = BotStateStore(state_path)
+        store = BotStateStore(Config.BOT_STATE_FILE, user_id=user_id)
         state = store.load()
 
         # Step 1: Check for One-Time Activation Key (ACT-XXXX-...)
@@ -471,7 +484,13 @@ def invest_crypto():
 
 @app.before_request
 def restrict_ip():
-    if Config.IP_WHITELIST:
+    if Config.ALLOWED_IPS:
+        if "*" in Config.ALLOWED_IPS:
+            return
+        client_ip = request.remote_addr
+        if client_ip not in Config.ALLOWED_IPS and client_ip != '127.0.0.1':
+            return jsonify({"ok": False, "error": "IP Forbidden"}), 403
+    elif Config.IP_WHITELIST:
         client_ip = request.remote_addr
         if client_ip not in Config.IP_WHITELIST and client_ip != '127.0.0.1':
             return jsonify({"ok": False, "error": "IP Forbidden"}), 403

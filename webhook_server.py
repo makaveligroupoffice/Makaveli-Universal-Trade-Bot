@@ -13,7 +13,10 @@ from broker_alpaca import AlpacaBroker, PositionIntent, OrderSide
 from risk import RiskManager
 from notifications import send_notification
 from scanner import Scanner
-from models import db, User, bcrypt
+from security import SecurityManager
+from models import db, User, bcrypt, TradeAudit
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 os.makedirs(Config.LOG_DIR, exist_ok=True)
 
@@ -31,6 +34,13 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = Config.SQLALCHEMY_DATABASE_URI
 app.config['SECRET_KEY'] = Config.SECRET_KEY
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+)
 
 db.init_app(app)
 bcrypt.init_app(app)
@@ -58,22 +68,22 @@ def _get_authenticated_user(req):
         token = auth_header.split(" ")[1]
         try:
             data = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-            user = User.query.get(data['user_id'])
+            user = db.session.get(User, data['user_id'])
             if user:
                 return user
         except:
             pass
 
-    # 2. Check for legacy webhook secret (for backward compatibility with TradingView alerts)
-    secret = ""
-    if req.is_json:
-        secret = (req.get_json(silent=True) or {}).get("secret", "")
+    # 2. Check for webhook secret in header
     header_secret = req.headers.get("X-Webhook-Secret", "")
-    if (secret and secret == Config.WEBHOOK_SECRET) or (
-        header_secret and header_secret == Config.WEBHOOK_SECRET
-    ):
-        # Associate with the first user in the database or a default user
-        return User.query.first()
+    if SecurityManager.validate_webhook_secret(header_secret):
+        # If secret is valid, we still need a user to execute the trade.
+        # Webhooks without JWT must specify which user they are for,
+        # otherwise we fallback to the first admin or first user.
+        user_id = req.args.get("user_id") or (req.get_json(silent=True) or {}).get("user_id")
+        if user_id:
+            return db.session.get(User, user_id)
+        return User.query.filter_by(is_admin=True).first() or User.query.first()
 
     # 3. Check for Flask-Login session (for browser-based requests)
     if current_user.is_authenticated:
@@ -192,6 +202,7 @@ def logout():
 
 
 @app.post("/webhook")
+@limiter.limit("10 per minute")
 def webhook():
     user = _get_authenticated_user(request)
     if not user:
@@ -200,6 +211,17 @@ def webhook():
 
     data = request.get_json(silent=True) or {}
     log.info(f"webhook received from user {user.username}: {data}")
+
+    # Record webhook hit in trade audit
+    audit = TradeAudit(
+        user_id=user.id,
+        action="WEBHOOK_RECEIVED",
+        symbol=data.get("symbol", "N/A"),
+        reason=data.get("action", "N/A"),
+        details=json.dumps(data)
+    )
+    db.session.add(audit)
+    db.session.commit()
 
     # Initialize user-specific broker if applicable
     active_broker = broker
@@ -378,7 +400,27 @@ def webhook():
 
 @app.get("/health")
 def health():
-    return jsonify({"ok": True}), 200
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "uptime": "TODO: Add uptime tracker"
+    }), 200
+
+@app.get("/api/heartbeat")
+@login_required
+def heartbeat():
+    # Per-user heartbeat to check if their specific bot instance is active
+    user_id = current_user.get_id()
+    from bot_state import BotStateStore
+    store = BotStateStore(Config.BOT_STATE_FILE, user_id=user_id)
+    state = store.load()
+    
+    return jsonify({
+        "ok": True,
+        "user": current_user.username,
+        "bot_enabled": state.get("enabled", False),
+        "last_action": state.get("audit_trail", [])[-1] if state.get("audit_trail") else None
+    })
 
 
 @app.post("/submit_logs")

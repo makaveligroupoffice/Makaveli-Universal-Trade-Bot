@@ -58,7 +58,9 @@ def main():
                 status = parts[1].upper()
                 machine_id = parts[2] if len(parts) > 2 else None
                 
-                if machine_id:
+                if status == "RESET":
+                     ids_status[client_id] = {"status": "RESET"}
+                elif machine_id:
                     ids_status[client_id] = {"status": status, "machine_id": machine_id}
                 else:
                     ids_status[client_id] = status

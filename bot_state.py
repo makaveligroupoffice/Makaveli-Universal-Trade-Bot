@@ -6,9 +6,16 @@ from config import Config
 
 
 class BotStateStore:
-    def __init__(self, path: str):
-        self.path = path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+    def __init__(self, path: str, user_id: int | None = None):
+        self.user_id = user_id
+        if user_id:
+            # Use user-specific state file if user_id is provided
+            filename = os.path.basename(path)
+            directory = os.path.dirname(path)
+            self.path = os.path.join(directory, f"user_{user_id}_{filename}")
+        else:
+            self.path = path
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
 
     @staticmethod
     def default_state() -> dict:

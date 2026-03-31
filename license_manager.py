@@ -53,12 +53,9 @@ class LicenseManager:
         
         bound_machine = state.get("licensed_machine_id")
         
-        # If it's already activated, check if the hardware matches
-        if bound_machine and bound_machine != current_machine:
-            logger.critical("LICENSE VIOLATION: Bot is being shared or moved to unauthorized hardware.")
-            LicenseManager._set_revoked(True, "Machine ID mismatch. License is bound to another device.", store)
-            return False
-
+        # If we have a license_id mismatch between state and config, we might need a reset
+        # but let's stick to hardware first.
+        
         if not Config.LICENSE_URL:
             logger.warning("LICENSE_URL not set. Skipping remote verification.")
             return True
@@ -85,24 +82,59 @@ class LicenseManager:
             ids_status = data.get("ids", {})
             license_entry = ids_status.get(Config.LICENSE_ID)
             
-            if license_entry:
-                if isinstance(license_entry, dict):
-                    # Check status
-                    if license_entry.get("status") == "REVOKED":
-                        logger.critical(f"LICENSE STATUS: REVOKED for ID: {Config.LICENSE_ID}")
-                        LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} revoked.", store)
-                        return False
-                    
-                    # Check server-side machine binding
-                    server_machine_id = license_entry.get("machine_id")
-                    if server_machine_id and server_machine_id != current_machine:
-                        logger.critical(f"LICENSE VIOLATION: Server reports this ID is bound to {server_machine_id}")
-                        LicenseManager._set_revoked(True, "Remote machine ID mismatch.", store)
-                        return False
-                elif license_entry == "REVOKED":
+            if not license_entry:
+                # If the ID isn't in the server's list, we don't necessarily revoke it
+                # but we should be cautious. For now, we'll allow it if it's already bound.
+                if bound_machine and bound_machine != current_machine:
+                    logger.critical("LICENSE VIOLATION: Bot is being shared or moved to unauthorized hardware.")
+                    LicenseManager._set_revoked(True, "Machine ID mismatch. License is bound to another device.", store)
+                    return False
+                return True
+
+            if isinstance(license_entry, dict):
+                status = license_entry.get("status", "OK").upper()
+                server_machine_id = license_entry.get("machine_id")
+                
+                if status == "REVOKED":
                     logger.critical(f"LICENSE STATUS: REVOKED for ID: {Config.LICENSE_ID}")
                     LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} revoked.", store)
                     return False
+                
+                if status == "PENDING":
+                    # This allows a license to be bound to the NEXT machine that uses it
+                    logger.info(f"License ID {Config.LICENSE_ID} is PENDING. Binding to this machine.")
+                    state["licensed_machine_id"] = current_machine
+                    store.save(state)
+                    # We should also notify the server to update the machine_id if possible
+                    # but for now, we just proceed.
+                    return True
+
+                if status == "RESET":
+                    # Server requested a reset of the hardware binding
+                    logger.warning(f"License ID {Config.LICENSE_ID} reset requested by server. Re-binding.")
+                    state["licensed_machine_id"] = current_machine
+                    store.save(state)
+                    return True
+
+                # Check server-side machine binding
+                if server_machine_id and server_machine_id != current_machine:
+                    # IF the server says it's bound to X, and we are Y, it's a violation.
+                    # UNLESS the local state is already bound to Y and the server is just behind?
+                    # No, server is source of truth for anti-sharing.
+                    logger.critical(f"LICENSE VIOLATION: Server reports this ID is bound to {server_machine_id}")
+                    LicenseManager._set_revoked(True, "Remote machine ID mismatch.", store)
+                    return False
+            
+            elif isinstance(license_entry, str):
+                if license_entry.upper() == "REVOKED":
+                    logger.critical(f"LICENSE STATUS: REVOKED for ID: {Config.LICENSE_ID}")
+                    LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} revoked.", store)
+                    return False
+                elif license_entry.upper() == "PENDING":
+                    logger.info(f"License ID {Config.LICENSE_ID} is PENDING (str). Binding to this machine.")
+                    state["licensed_machine_id"] = current_machine
+                    store.save(state)
+                    return True
 
             # Logic 3: Specific ID revocation list
             revoked_ids = data.get("revoked_ids", [])
@@ -110,6 +142,19 @@ class LicenseManager:
                 logger.critical(f"LICENSE REVOKED for ID: {Config.LICENSE_ID}")
                 LicenseManager._set_revoked(True, f"License ID {Config.LICENSE_ID} in revocation list.", store)
                 return False
+
+            # Logic 4: Check local machine binding if server didn't provide one
+            # This handles the case where the server just says "OK" but we already bound locally.
+            if bound_machine and bound_machine != current_machine:
+                 # Check if the server entry specifically allows a machine change (e.g. by being dict without machine_id)
+                 if isinstance(license_entry, dict) and not license_entry.get("machine_id"):
+                     logger.warning("Local machine ID mismatch but server allows any machine for this ID. Updating local binding.")
+                     state["licensed_machine_id"] = current_machine
+                     store.save(state)
+                 else:
+                     logger.critical("LICENSE VIOLATION: Local state mismatch. Bot is being shared.")
+                     LicenseManager._set_revoked(True, "Local Machine ID mismatch.", store)
+                     return False
 
             # If we're here, the license is still valid according to the server
             LicenseManager._set_revoked(False, "License verification successful.", store)
@@ -124,6 +169,10 @@ class LicenseManager:
 
         except Exception as e:
             logger.error(f"Failed to verify license remotely: {e}")
+            # If we fail to reach server, we trust the local machine binding
+            if bound_machine and bound_machine != current_machine:
+                logger.critical("LOCAL LICENSE VIOLATION: Offline check failed.")
+                return False
             return True
 
     @staticmethod

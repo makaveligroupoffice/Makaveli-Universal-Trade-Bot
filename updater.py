@@ -40,10 +40,29 @@ class AutoUpdater:
             
             if status.stdout.strip():
                 log.info("New updates detected on GitHub. Pulling changes...")
-                pull_result = subprocess.run(["git", "pull", self.remote, self.branch], check=True, capture_output=True, text=True)
                 
+                # Stash any local changes to ensure a clean pull
+                # We ignore untracked files as they should be in .gitignore anyway
+                subprocess.run(["git", "stash"], capture_output=True)
+                
+                pull_result = subprocess.run(["git", "pull", "--rebase", self.remote, self.branch], check=True, capture_output=True, text=True)
+                
+                # Pop the stash if we stashed something
+                subprocess.run(["git", "stash", "pop"], capture_output=True)
+
                 if "Already up to date" not in pull_result.stdout:
                     log.info("Update successful. Hot-reloading will apply changes.")
+                    
+                    # Post-update: Run database migrations if any
+                    try:
+                        log.info("Running database migrations...")
+                        # We use flask-migrate if available, or just db.create_all() via app.py
+                        # Since we have flask-migrate installed now, we should ideally use it.
+                        # But for simplicity and safety, ensure schema is up to date.
+                        subprocess.run(["flask", "db", "upgrade"], capture_output=True)
+                    except Exception as migration_error:
+                        log.warning(f"Migration failed or not configured: {migration_error}")
+
                     send_notification(
                         "The tradebot has automatically updated its code from GitHub and is applying changes live.",
                         title="Auto-Update Successful"

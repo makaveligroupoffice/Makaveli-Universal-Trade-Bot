@@ -17,6 +17,7 @@ class Config:
     LICENSE_CHECK_INTERVAL_SECONDS: int = int(os.getenv("LICENSE_CHECK_INTERVAL_SECONDS", "3600"))
     API_KEY_ENCRYPTION_KEY: str = os.getenv("API_KEY_ENCRYPTION_KEY", "secure-encryption-key-12345")
     IP_WHITELIST: tuple[str, ...] = tuple(s.strip() for s in os.getenv("IP_WHITELIST", "127.0.0.1").split(",") if s.strip())
+    ALLOWED_IPS: tuple[str, ...] = tuple(s.strip() for s in os.getenv("ALLOWED_IPS", "").split(",") if s.strip())
 
     # Broker
     BROKER: str = os.getenv("BROKER", "ALPACA")

@@ -81,13 +81,12 @@ class AutoTrader:
         self.strategy = Strategy()
         self.data = MarketDataClient()
         
-        state_path = Config.BOT_STATE_FILE
+        self.state_store = BotStateStore(Config.BOT_STATE_FILE, user_id=user_id)
+        
         journal_path = Config.TRADE_JOURNAL_FILE
-        if user_id:
-            state_path = os.path.join(Config.LOG_DIR, f"bot_state_user_{user_id}.json")
+        if user_id and user_id != "external":
             journal_path = os.path.join(Config.LOG_DIR, f"trade_journal_user_{user_id}.jsonl")
 
-        self.state_store = BotStateStore(state_path)
         self.trade_journal = TradeJournal(journal_path)
         self.analyzer = PerformanceAnalyzer(journal_path)
         self.learning = LearningEngine(journal_path)
@@ -1503,12 +1502,14 @@ class AutoTrader:
             from license_manager import LicenseManager
             LicenseManager.verify_license(store=self.state_store) # Remote check
             
-            state_raw = self.state_store.load()
-            if state_raw.get("license_revoked", False):
+            # Refresh internal state to pick up any license binding/status changes
+            self.state = self.state_store.load()
+            
+            if self.state.get("license_revoked", False):
                 log.critical("LICENSE HAS BEEN REVOKED. Terminating cycle for this user.")
                 return # Exit the run cycle for this user
                 
-            if not state_raw.get("sharing_authorized", False):
+            if not self.state.get("sharing_authorized", False):
                 # If not authorized, we check if the SHARING_ACTIVATION_KEY is provided.
                 # Only the owner knows this key (MAKA-VALI-PRIME-2026).
                 # New users CANNOT bypass this by just generating a local AUTH_TOKEN.
@@ -1526,8 +1527,8 @@ class AutoTrader:
                         
                         # Verify against user's specific sharing_token or the Master Key
                         if token == Config.SHARING_ACTIVATION_KEY or (hasattr(self.user, 'sharing_token') and token == self.user.sharing_token):
-                            state_raw["sharing_authorized"] = True
-                            self.state_store.save(state_raw)
+                            self.state["sharing_authorized"] = True
+                            self.state_store.save(self.state)
                             log.info(f"SUCCESS: User {self.user.username} has been AUTHORIZED via terminal.")
                             # Proceed with the run cycle
                             return self.run(single_cycle=single_cycle)
