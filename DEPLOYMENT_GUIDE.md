@@ -49,7 +49,17 @@ The following files are ignored by Git (`.gitignore`) and will **NOT** be synced
 
 This ensures that trading data on your VPS doesn't overwrite your MacBook data and vice versa.
 
-#### 6. Manual Update Trigger (VPS)
+#### 6. Production Server (Gunicorn & Nginx)
+For stability and security, the Web HUD should be run using Gunicorn and Nginx:
+1. **Gunicorn**: Manages multiple Python worker processes for the Flask app.
+   - Configured in `com.tradebot.webhook.plist` to run with 4 workers.
+2. **Nginx**: Acts as a reverse proxy, handling incoming traffic and forwarding it to Gunicorn.
+   - Installed via Homebrew: `brew install nginx`
+   - Configured in `/opt/homebrew/etc/nginx/servers/tradebot.conf`
+   - Listens on port `8080` (proxying to `5001`).
+   - Supports `X-Forwarded-For` for accurate IP whitelisting.
+
+#### 7. Manual Update Trigger (VPS)
 If you want to apply changes immediately on the VPS:
 ```bash
 pm2 restart tradebot-runner
