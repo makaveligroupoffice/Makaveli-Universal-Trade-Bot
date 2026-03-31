@@ -49,19 +49,25 @@ The following files are ignored by Git (`.gitignore`) and will **NOT** be synced
 
 This ensures that trading data on your VPS doesn't overwrite your MacBook data and vice versa.
 
-#### 6. Production Server (Gunicorn & Nginx)
-For stability and security, the Web HUD should be run using Gunicorn and Nginx:
-1. **Gunicorn**: Manages multiple Python worker processes for the Flask app.
-   - Configured in `com.tradebot.webhook.plist` to run with 4 workers.
-2. **Nginx**: Acts as a reverse proxy, handling incoming traffic and forwarding it to Gunicorn.
-   - Installed via Homebrew: `brew install nginx`
-   - Configured in `/opt/homebrew/etc/nginx/servers/tradebot.conf`
-   - Listens on port `8080` (proxying to `5001`).
-   - Supports `X-Forwarded-For` for accurate IP whitelisting.
+#### 6. Development vs. Production Setup
+
+**Development (MacBook / PyCharm):**
+- Run the bot directly from PyCharm using `app.py` (Web HUD) and `bot_runner.py` (Trading Engine).
+- Set `DEBUG=true` in your `.env` to enable hot-reloading and relaxed security for local testing.
+- Local production services (Nginx, Gunicorn, LaunchAgents) are disabled to avoid port conflicts and complexity.
+
+**Production (DigitalOcean):**
+- The VPS uses a professional stack: **Nginx**, **Gunicorn**, and **systemd**.
+- **systemd** manages the processes (`systemctl restart tradebot`).
+- **Nginx** acts as a reverse proxy for security.
+- The bot handles `X-TradeBot-Secret` headers for authenticated communication between services.
 
 #### 7. Manual Update Trigger (VPS)
 If you want to apply changes immediately on the VPS:
 ```bash
-pm2 restart tradebot-runner
+systemctl restart tradebot
 ```
-The bot checks for updates on every startup.
+Check logs:
+```bash
+journalctl -u tradebot -f
+```

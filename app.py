@@ -640,6 +640,6 @@ if __name__ == "__main__":
     app.run(
         host=Config.HOST,
         port=Config.PORT,
-        debug=False,
-        use_reloader=False
+        debug=Config.DEBUG,
+        use_reloader=Config.DEBUG
     )

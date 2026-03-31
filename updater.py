@@ -27,9 +27,12 @@ class AutoUpdater:
         # Point 8: systemd is the ONLY process manager. 
         # We check if we are running under systemd or if auto-update should be restricted.
         # If /etc/systemd/system/tradebot.service exists, we are in production.
-        is_production = os.path.exists("/etc/systemd/system/tradebot.service")
-        if is_production:
-            log.debug("Production mode detected (systemd). Auto-updater will NOT pull code to avoid interference.")
+        # Note: On macOS, we check for our LaunchAgent plists instead.
+        is_production_linux = os.path.exists("/etc/systemd/system/tradebot.service")
+        is_production_mac = os.path.exists(os.path.expanduser("~/Library/LaunchAgents/com.tradebot.webhook.plist"))
+        
+        if is_production_linux or is_production_mac:
+            log.debug("Production mode detected (systemd/launchd). Auto-updater will NOT pull code to avoid interference.")
             return False
 
         try:

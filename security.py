@@ -57,6 +57,11 @@ class SecurityManager:
     def validate_tradebot_secret(cls, request_secret: str) -> bool:
         """Validates if the provided secret matches the X-TradeBot-Secret."""
         if not request_secret:
+            # If the secret is not provided, we check if we're in 'development' mode (e.g., debug enabled)
+            # to avoid blocking PyCharm local testing if the user hasn't set up headers yet.
+            if Config.DEBUG:
+                log.debug("No X-TradeBot-Secret provided, but DEBUG is enabled. Allowing request.")
+                return True
             return False
         # For now, we reuse WEBHOOK_SECRET for both for simplicity, 
         # or we could add a separate TRADEBOT_SECRET to Config.
